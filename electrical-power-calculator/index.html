@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Electrical Power Calculator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <section class="calculator">
+      <h1>Electrical Power Calculator</h1>
+      <p class="subtitle">电功率与电费估算工具</p>
+
+      <div class="form-section">
+        <h2>功率计算</h2>
+
+        <!-- 输入区域：用户填写电压、电流和功率因数 -->
+        <label for="voltage">电压 V</label>
+        <input id="voltage" type="number" min="0" step="0.01" placeholder="例如：220">
+
+        <label for="current">电流 A</label>
+        <input id="current" type="number" min="0" step="0.01" placeholder="例如：10">
+
+        <label for="powerFactor">功率因数 cosφ</label>
+        <input id="powerFactor" type="number" min="0" max="1" step="0.01" placeholder="例如：0.85">
+      </div>
+
+      <div class="form-section">
+        <h2>电费估算</h2>
+
+        <!-- 电费估算区域：用户填写使用时间和电价 -->
+        <label for="useHours">使用时间 h</label>
+        <input id="useHours" type="number" min="0" step="0.01" placeholder="例如：8">
+
+        <label for="price">电价 元/kWh</label>
+        <input id="price" type="number" min="0" step="0.01" placeholder="例如：0.6">
+      </div>
+
+      <button id="calculateBtn" type="button">计算</button>
+
+      <!-- 结果区域：显示功率、耗电量和电费 -->
+      <div class="result">
+        <h2>计算结果</h2>
+        <p>单相功率：<strong id="singlePhasePower">--</strong></p>
+        <p>三相功率：<strong id="threePhasePower">--</strong></p>
+        <p>单相耗电量：<strong id="singlePhaseEnergy">--</strong></p>
+        <p>三相耗电量：<strong id="threePhaseEnergy">--</strong></p>
+        <p>单相电费：<strong id="singlePhaseCost">--</strong></p>
+        <p>三相电费：<strong id="threePhaseCost">--</strong></p>
+      </div>
+
+      <p id="message" class="message"></p>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
