@@ -10,6 +10,9 @@ const counters = {
   wire: 0
 };
 
+// 网格大小：元件坐标会自动吸附到 24px 网格
+const GRID_SIZE = 24;
+
 // 不同元件的默认显示信息
 const componentConfig = {
   source: { prefix: "V", label: "直流电源", value: "12V", symbol: "V" },
@@ -26,6 +29,12 @@ const clearBtn = document.getElementById("clearBtn");
 const selectedName = document.getElementById("selectedName");
 const valueInput = document.getElementById("valueInput");
 const applyValueBtn = document.getElementById("applyValueBtn");
+const deleteBtn = document.getElementById("deleteBtn");
+const copyJsonBtn = document.getElementById("copyJsonBtn");
+const downloadJsonBtn = document.getElementById("downloadJsonBtn");
+const importInput = document.getElementById("importInput");
+const importJsonBtn = document.getElementById("importJsonBtn");
+const statusText = document.getElementById("statusText");
 const toolItems = document.querySelectorAll(".tool-item");
 
 let selectedComponentId = null;
@@ -35,14 +44,19 @@ let dragOffsetX = 0;
 let dragOffsetY = 0;
 let toolPreview = null;
 
+// 将普通坐标吸附到最近的网格点
+function snapToGrid(value) {
+  return Math.round(value / GRID_SIZE) * GRID_SIZE;
+}
+
 // 把坐标限制在画布范围内，避免元件被拖出画布
 function clampPosition(x, y) {
   const maxX = Math.max(0, canvas.clientWidth - 130);
   const maxY = Math.max(0, canvas.clientHeight - 70);
 
   return {
-    x: Math.min(Math.max(0, x), maxX),
-    y: Math.min(Math.max(0, y), maxY)
+    x: Math.min(Math.max(0, snapToGrid(x)), snapToGrid(maxX)),
+    y: Math.min(Math.max(0, snapToGrid(y)), snapToGrid(maxY))
   };
 }
 
@@ -51,6 +65,22 @@ function createComponentId(type) {
   const config = componentConfig[type];
   counters[type] += 1;
   return `${config.prefix}${counters[type]}`;
+}
+
+// 导入 JSON 后，重新计算各类元件的计数器，避免新建元件编号重复
+function rebuildCounters() {
+  Object.keys(counters).forEach((key) => {
+    counters[key] = 0;
+  });
+
+  components.forEach((component) => {
+    const config = componentConfig[component.type];
+    const numberPart = Number(component.id.replace(config.prefix, ""));
+
+    if (!Number.isNaN(numberPart)) {
+      counters[component.type] = Math.max(counters[component.type], numberPart);
+    }
+  });
 }
 
 // 根据拖拽落点创建一个新元件
@@ -69,6 +99,18 @@ function addComponent(type, x, y) {
   render();
 }
 
+// 删除当前选中的元件
+function deleteSelectedComponent() {
+  if (!selectedComponentId) {
+    return;
+  }
+
+  components = components.filter((component) => component.id !== selectedComponentId);
+  selectedComponentId = null;
+  setStatus("已删除选中的元件。", "success");
+  render();
+}
+
 // 渲染画布中的所有元件
 function renderCanvas() {
   canvas.innerHTML = "";
@@ -77,7 +119,7 @@ function renderCanvas() {
     const config = componentConfig[component.type];
     const element = document.createElement("div");
 
-    element.className = "component";
+    element.className = `component type-${component.type}`;
     element.dataset.id = component.id;
     element.style.left = `${component.x}px`;
     element.style.top = `${component.y}px`;
@@ -96,20 +138,18 @@ function renderCanvas() {
     element.addEventListener("click", (event) => {
       event.stopPropagation();
       selectedComponentId = component.id;
-      updateEditor();
-      renderCanvas();
-      renderJson();
+      render();
     });
 
     // 鼠标按下后进入画布内拖动模式
     element.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
       draggedComponentId = component.id;
       selectedComponentId = component.id;
       dragOffsetX = event.offsetX;
       dragOffsetY = event.offsetY;
       element.setPointerCapture(event.pointerId);
-      element.classList.add("selected");
-      updateEditor();
+      render();
     });
 
     canvas.appendChild(element);
@@ -131,6 +171,7 @@ function updateEditor() {
     valueInput.value = "";
     valueInput.disabled = true;
     applyValueBtn.disabled = true;
+    deleteBtn.disabled = true;
     return;
   }
 
@@ -138,6 +179,13 @@ function updateEditor() {
   valueInput.value = component.value;
   valueInput.disabled = false;
   applyValueBtn.disabled = false;
+  deleteBtn.disabled = false;
+}
+
+// 显示底部操作提示
+function setStatus(message, type = "") {
+  statusText.textContent = message;
+  statusText.className = `status-text ${type}`.trim();
 }
 
 // 统一渲染页面
@@ -151,7 +199,7 @@ function render() {
 function createToolPreview(type, x, y) {
   const config = componentConfig[type];
   const preview = document.createElement("div");
-  preview.className = "component";
+  preview.className = `component type-${type}`;
   preview.style.pointerEvents = "none";
   preview.style.position = "fixed";
   preview.style.left = `${x - 58}px`;
@@ -218,7 +266,14 @@ canvas.addEventListener("click", () => {
 });
 
 // 拖动画布中的已有元件，实时更新 components 中的 x、y
-canvas.addEventListener("pointermove", (event) => {
+document.addEventListener("pointermove", (event) => {
+  if (toolPreview) {
+    toolPreview.style.left = `${event.clientX - 58}px`;
+    toolPreview.style.top = `${event.clientY - 24}px`;
+    canvas.classList.toggle("drag-over", isPointInCanvas(event.clientX, event.clientY));
+    return;
+  }
+
   if (!draggedComponentId) {
     return;
   }
@@ -240,43 +295,24 @@ canvas.addEventListener("pointermove", (event) => {
   render();
 });
 
-// 移动工具栏元件预览
-document.addEventListener("pointermove", (event) => {
-  if (!toolPreview) {
-    return;
-  }
-
-  toolPreview.style.left = `${event.clientX - 58}px`;
-  toolPreview.style.top = `${event.clientY - 24}px`;
-  canvas.classList.toggle("drag-over", isPointInCanvas(event.clientX, event.clientY));
-});
-
-// 松开鼠标时，如果位置在画布内，就创建一个新元件
+// 松开鼠标时，如果工具栏元件位置在画布内，就创建新元件
 document.addEventListener("pointerup", (event) => {
-  if (!draggedToolType) {
-    return;
-  }
+  if (draggedToolType) {
+    if (isPointInCanvas(event.clientX, event.clientY)) {
+      const rect = canvas.getBoundingClientRect();
+      addComponent(draggedToolType, event.clientX - rect.left - 58, event.clientY - rect.top - 24);
+      setStatus("已添加新元件。", "success");
+    }
 
-  if (isPointInCanvas(event.clientX, event.clientY)) {
-    const rect = canvas.getBoundingClientRect();
-    addComponent(draggedToolType, event.clientX - rect.left - 58, event.clientY - rect.top - 24);
-  }
-
-  if (toolPreview) {
-    toolPreview.remove();
+    if (toolPreview) {
+      toolPreview.remove();
+    }
   }
 
   toolPreview = null;
   draggedToolType = null;
+  draggedComponentId = null;
   canvas.classList.remove("drag-over");
-});
-
-canvas.addEventListener("pointerup", () => {
-  draggedComponentId = null;
-});
-
-canvas.addEventListener("pointerleave", () => {
-  draggedComponentId = null;
 });
 
 // 清空画布和 JSON 数据
@@ -289,6 +325,8 @@ clearBtn.addEventListener("click", () => {
 
   components = [];
   selectedComponentId = null;
+  rebuildCounters();
+  setStatus("画布已清空。", "success");
   render();
 });
 
@@ -301,7 +339,81 @@ applyValueBtn.addEventListener("click", () => {
   }
 
   component.value = valueInput.value.trim() || component.value;
+  setStatus(`已修改 ${component.id} 的数值。`, "success");
   render();
+});
+
+// 删除按钮
+deleteBtn.addEventListener("click", deleteSelectedComponent);
+
+// Delete 键删除当前选中元件
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Delete" && selectedComponentId) {
+    deleteSelectedComponent();
+  }
+});
+
+// 复制 JSON 到剪贴板
+copyJsonBtn.addEventListener("click", async () => {
+  await navigator.clipboard.writeText(JSON.stringify(components, null, 2));
+  setStatus("JSON 已复制到剪贴板。", "success");
+});
+
+// 下载 JSON 文件
+downloadJsonBtn.addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(components, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = "circuit-components.json";
+  link.click();
+  URL.revokeObjectURL(url);
+  setStatus("JSON 文件已开始下载。", "success");
+});
+
+// 检查导入的 JSON 数据是否符合 components 数组格式
+function normalizeImportedComponents(data) {
+  if (!Array.isArray(data)) {
+    throw new Error("JSON 顶层必须是数组。");
+  }
+
+  return data.map((item, index) => {
+    if (!item || typeof item !== "object") {
+      throw new Error(`第 ${index + 1} 项不是有效对象。`);
+    }
+
+    if (!componentConfig[item.type]) {
+      throw new Error(`第 ${index + 1} 项的 type 不支持。`);
+    }
+
+    const config = componentConfig[item.type];
+    const id = String(item.id || `${config.prefix}${index + 1}`);
+    const value = String(item.value || config.value);
+    const position = clampPosition(Number(item.x) || 0, Number(item.y) || 0);
+
+    return {
+      id,
+      type: item.type,
+      value,
+      x: position.x,
+      y: position.y
+    };
+  });
+}
+
+// 导入 JSON 并恢复画布
+importJsonBtn.addEventListener("click", () => {
+  try {
+    const imported = JSON.parse(importInput.value);
+    components = normalizeImportedComponents(imported);
+    selectedComponentId = null;
+    rebuildCounters();
+    setStatus("JSON 导入成功，画布已恢复。", "success");
+    render();
+  } catch (error) {
+    setStatus(`导入失败：${error.message}`, "error");
+  }
 });
 
 render();

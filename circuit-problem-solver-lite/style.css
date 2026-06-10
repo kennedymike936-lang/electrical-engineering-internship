@@ -43,7 +43,7 @@ body {
 
 .workspace {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 252px minmax(0, 1fr);
   gap: 18px;
 }
 
@@ -60,7 +60,8 @@ body {
   padding: 18px;
 }
 
-.toolbar h2 {
+.toolbar h2,
+.editor-panel h2 {
   font-size: 18px;
 }
 
@@ -96,8 +97,32 @@ body {
   justify-content: center;
   border-radius: 8px;
   color: #ffffff;
-  background: #2563eb;
   font-weight: 700;
+}
+
+.source-tool .tool-symbol,
+.component.type-source .component-symbol {
+  background: #dc2626;
+}
+
+.resistor-tool .tool-symbol,
+.component.type-resistor .component-symbol {
+  background: #2563eb;
+}
+
+.capacitor-tool .tool-symbol,
+.component.type-capacitor .component-symbol {
+  background: #7c3aed;
+}
+
+.inductor-tool .tool-symbol,
+.component.type-inductor .component-symbol {
+  background: #0f766e;
+}
+
+.wire-tool .tool-symbol,
+.component.type-wire .component-symbol {
+  background: #475569;
 }
 
 .tool-item small {
@@ -112,27 +137,30 @@ body {
   border-top: 1px solid #e2e8f0;
 }
 
-.editor-panel h2 {
-  font-size: 18px;
+.editor-panel p,
+.editor-panel small,
+.status-text {
+  color: #64748b;
 }
 
 .editor-panel p {
   margin: 0 0 12px;
-  color: #64748b;
 }
 
-.editor-panel label {
+.editor-panel label,
+.import-panel label {
   display: block;
   margin-bottom: 6px;
   font-weight: 700;
 }
 
-.editor-panel input {
+.editor-panel input,
+.import-panel textarea {
   width: 100%;
   padding: 10px;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
-  font-size: 15px;
+  font: inherit;
 }
 
 .editor-panel input:disabled {
@@ -155,6 +183,37 @@ body {
 .apply-button:disabled {
   cursor: not-allowed;
   background: #94a3b8;
+}
+
+.ghost-button {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #1f2937;
+  background: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ghost-button:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.ghost-button.danger:hover {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.ghost-button.full {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.ghost-button:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
 }
 
 .canvas-area {
@@ -228,25 +287,8 @@ body {
   justify-content: center;
   border-radius: 50%;
   color: #ffffff;
-  background: #0f766e;
   font-size: 13px;
   font-weight: 700;
-}
-
-.ghost-button {
-  flex: 0 0 auto;
-  padding: 10px 14px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  color: #1f2937;
-  background: #ffffff;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.ghost-button:hover {
-  border-color: #2563eb;
-  color: #2563eb;
 }
 
 .json-panel {
@@ -256,13 +298,20 @@ body {
 
 .json-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
 }
 
+.json-actions {
+  display: flex;
+  gap: 8px;
+}
+
 #countText {
+  display: inline-block;
+  margin-top: 4px;
   color: #64748b;
 }
 
@@ -279,6 +328,27 @@ pre {
   line-height: 1.5;
 }
 
+.import-panel {
+  margin-top: 16px;
+}
+
+.import-panel textarea {
+  resize: vertical;
+}
+
+.status-text {
+  min-height: 22px;
+  margin: 10px 0 0;
+}
+
+.status-text.error {
+  color: #dc2626;
+}
+
+.status-text.success {
+  color: #0f766e;
+}
+
 @media (max-width: 760px) {
   .topbar,
   .canvas-title,
@@ -289,6 +359,10 @@ pre {
 
   .workspace {
     grid-template-columns: 1fr;
+  }
+
+  .json-actions {
+    flex-direction: column;
   }
 
   .circuit-canvas {

@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Circuit Problem Solver Lite V2</title>
+  <title>Circuit Problem Solver Lite V2.1</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
     <header class="topbar">
       <div>
-        <h1>Circuit Problem Solver Lite V2</h1>
-        <p>拼图式电路编辑器：先搭电路图，再保存结构化数据</p>
+        <h1>Circuit Problem Solver Lite V2.1</h1>
+        <p>拼图式电路编辑器：拖拽元件、修改数值、保存 JSON 数据。</p>
       </div>
-      <button id="clearBtn" class="ghost-button" type="button">清空画布</button>
+      <button id="clearBtn" class="ghost-button danger" type="button">清空画布</button>
     </header>
 
     <section class="workspace">
@@ -21,7 +21,7 @@
         <h2>元件工具栏</h2>
 
         <!-- 工具栏元件：拖拽到右侧画布即可创建对应元件 -->
-        <button class="tool-item" type="button" draggable="true" data-type="source">
+        <button class="tool-item source-tool" type="button" draggable="true" data-type="source">
           <span class="tool-symbol">V</span>
           <span>
             <strong>直流电源</strong>
@@ -29,7 +29,7 @@
           </span>
         </button>
 
-        <button class="tool-item" type="button" draggable="true" data-type="resistor">
+        <button class="tool-item resistor-tool" type="button" draggable="true" data-type="resistor">
           <span class="tool-symbol">R</span>
           <span>
             <strong>电阻</strong>
@@ -37,7 +37,7 @@
           </span>
         </button>
 
-        <button class="tool-item" type="button" draggable="true" data-type="capacitor">
+        <button class="tool-item capacitor-tool" type="button" draggable="true" data-type="capacitor">
           <span class="tool-symbol">C</span>
           <span>
             <strong>电容</strong>
@@ -45,7 +45,7 @@
           </span>
         </button>
 
-        <button class="tool-item" type="button" draggable="true" data-type="inductor">
+        <button class="tool-item inductor-tool" type="button" draggable="true" data-type="inductor">
           <span class="tool-symbol">L</span>
           <span>
             <strong>电感</strong>
@@ -53,7 +53,7 @@
           </span>
         </button>
 
-        <button class="tool-item" type="button" draggable="true" data-type="wire">
+        <button class="tool-item wire-tool" type="button" draggable="true" data-type="wire">
           <span class="tool-symbol">W</span>
           <span>
             <strong>导线</strong>
@@ -67,13 +67,15 @@
           <label for="valueInput">元件数值</label>
           <input id="valueInput" type="text" placeholder="点击画布元件后修改" disabled>
           <button id="applyValueBtn" class="apply-button" type="button" disabled>应用修改</button>
+          <button id="deleteBtn" class="ghost-button danger full" type="button" disabled>删除元件</button>
+          <small>提示：选中元件后也可以按 Delete 键删除。</small>
         </div>
       </aside>
 
       <section class="canvas-area">
         <div class="canvas-title">
           <h2>网格画布</h2>
-          <p>把左侧元件拖到这里，点击画布上的元件可以修改数值。</p>
+          <p>拖拽元件到画布；元件会自动吸附到网格。暂不做连线和计算。</p>
         </div>
 
         <!-- 画布区域：JavaScript 会把元件渲染到这里 -->
@@ -83,10 +85,23 @@
 
     <section class="json-panel">
       <div class="json-header">
-        <h2>components JSON 数据</h2>
-        <span id="countText">0 个元件</span>
+        <div>
+          <h2>components JSON 数据</h2>
+          <span id="countText">0 个元件</span>
+        </div>
+        <div class="json-actions">
+          <button id="copyJsonBtn" class="ghost-button" type="button">复制 JSON</button>
+          <button id="downloadJsonBtn" class="ghost-button" type="button">下载 JSON</button>
+        </div>
       </div>
       <pre id="jsonOutput">[]</pre>
+
+      <div class="import-panel">
+        <label for="importInput">导入 JSON</label>
+        <textarea id="importInput" rows="5" placeholder="把之前导出的 components JSON 粘贴到这里"></textarea>
+        <button id="importJsonBtn" class="apply-button" type="button">导入到画布</button>
+        <p id="statusText" class="status-text"></p>
+      </div>
     </section>
   </main>
 
