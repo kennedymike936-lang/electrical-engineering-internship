@@ -1,88 +1,137 @@
-// 获取页面中的输入框、按钮、结果和提示信息
+// 获取页面元素
 const voltageInput = document.getElementById("voltage");
-const currentInput = document.getElementById("current");
-const powerFactorInput = document.getElementById("powerFactor");
-const useHoursInput = document.getElementById("useHours");
-const priceInput = document.getElementById("price");
-const calculateBtn = document.getElementById("calculateBtn");
-const singlePhasePowerText = document.getElementById("singlePhasePower");
-const threePhasePowerText = document.getElementById("threePhasePower");
-const singlePhaseEnergyText = document.getElementById("singlePhaseEnergy");
-const threePhaseEnergyText = document.getElementById("threePhaseEnergy");
-const singlePhaseCostText = document.getElementById("singlePhaseCost");
-const threePhaseCostText = document.getElementById("threePhaseCost");
+const resistorsInput = document.getElementById("resistors");
+const connectionTypeSelect = document.getElementById("connectionType");
+const solveBtn = document.getElementById("solveBtn");
 const messageText = document.getElementById("message");
+const equivalentResistanceText = document.getElementById("equivalentResistance");
+const totalCurrentText = document.getElementById("totalCurrent");
+const resistorDetails = document.getElementById("resistorDetails");
+const solutionSteps = document.getElementById("solutionSteps");
 
-// 将功率结果格式化为 W 或 kW，方便阅读
-function formatPower(power) {
-  if (power >= 1000) {
-    return `${(power / 1000).toFixed(2)} kW`;
-  }
-
-  return `${power.toFixed(2)} W`;
+// 将数值格式化，避免小数位过长
+function formatNumber(value, unit) {
+  return `${value.toFixed(3).replace(/\.?0+$/, "")} ${unit}`;
 }
 
-// 将耗电量格式化为 kWh
-function formatEnergy(energy) {
-  return `${energy.toFixed(2)} kWh`;
+// 解析电阻输入，例如 "10, 20, 30" 会转换为 [10, 20, 30]
+function parseResistors(text) {
+  return text
+    .split(",")
+    .map((item) => Number(item.trim()))
+    .filter((value) => !Number.isNaN(value));
 }
 
-// 将电费格式化为人民币金额
-function formatCost(cost) {
-  return `¥${cost.toFixed(2)}`;
+// 清空计算结果
+function resetResult() {
+  equivalentResistanceText.textContent = "--";
+  totalCurrentText.textContent = "--";
+  resistorDetails.innerHTML = "";
+  solutionSteps.innerHTML = "";
 }
 
-// 清空所有计算结果
-function resetResults() {
-  singlePhasePowerText.textContent = "--";
-  threePhasePowerText.textContent = "--";
-  singlePhaseEnergyText.textContent = "--";
-  threePhaseEnergyText.textContent = "--";
-  singlePhaseCostText.textContent = "--";
-  threePhaseCostText.textContent = "--";
+// 渲染每个电阻的电压和电流
+function renderResistorDetails(items) {
+  resistorDetails.innerHTML = "";
+
+  items.forEach((item, index) => {
+    const card = document.createElement("div");
+    card.className = "detail-card";
+    card.innerHTML = `
+      <h3>R${index + 1}</h3>
+      <p>电阻：<strong>${formatNumber(item.resistance, "Ω")}</strong></p>
+      <p>电压：<strong>${formatNumber(item.voltage, "V")}</strong></p>
+      <p>电流：<strong>${formatNumber(item.current, "A")}</strong></p>
+    `;
+    resistorDetails.appendChild(card);
+  });
 }
 
-// 点击计算按钮后执行功率和电费计算
-calculateBtn.addEventListener("click", function () {
+// 渲染中文解题步骤
+function renderSteps(steps) {
+  solutionSteps.innerHTML = "";
+
+  steps.forEach((step) => {
+    const li = document.createElement("li");
+    li.textContent = step;
+    solutionSteps.appendChild(li);
+  });
+}
+
+// 计算串联电路
+function solveSeries(voltage, resistors) {
+  const equivalentResistance = resistors.reduce((sum, value) => sum + value, 0);
+  const totalCurrent = voltage / equivalentResistance;
+
+  // 串联电路中，各电阻电流相同，电压按电阻大小分配
+  const details = resistors.map((resistance) => ({
+    resistance,
+    voltage: totalCurrent * resistance,
+    current: totalCurrent
+  }));
+
+  const steps = [
+    `已知电源电压 U = ${formatNumber(voltage, "V")}，电阻为 ${resistors.map((value) => formatNumber(value, "Ω")).join("、")}，连接方式为串联。`,
+    `串联电路的等效电阻等于各电阻之和：Req = R1 + R2 + ... = ${formatNumber(equivalentResistance, "Ω")}。`,
+    `根据欧姆定律，总电流 I = U / Req = ${formatNumber(voltage, "V")} / ${formatNumber(equivalentResistance, "Ω")} = ${formatNumber(totalCurrent, "A")}。`,
+    "串联电路中，各电阻电流相同，所以每个电阻的电流都等于总电流。",
+    "各电阻两端电压可用 Ui = I × Ri 计算，所有电阻电压之和等于电源电压。"
+  ];
+
+  return { equivalentResistance, totalCurrent, details, steps };
+}
+
+// 计算并联电路
+function solveParallel(voltage, resistors) {
+  const reciprocalSum = resistors.reduce((sum, value) => sum + 1 / value, 0);
+  const equivalentResistance = 1 / reciprocalSum;
+  const totalCurrent = voltage / equivalentResistance;
+
+  // 并联电路中，各支路电压相同，支路电流按电阻大小分配
+  const details = resistors.map((resistance) => ({
+    resistance,
+    voltage,
+    current: voltage / resistance
+  }));
+
+  const steps = [
+    `已知电源电压 U = ${formatNumber(voltage, "V")}，电阻为 ${resistors.map((value) => formatNumber(value, "Ω")).join("、")}，连接方式为并联。`,
+    `并联电路的等效电阻公式为：1 / Req = 1 / R1 + 1 / R2 + ...，计算得到 Req = ${formatNumber(equivalentResistance, "Ω")}。`,
+    `根据欧姆定律，总电流 I = U / Req = ${formatNumber(voltage, "V")} / ${formatNumber(equivalentResistance, "Ω")} = ${formatNumber(totalCurrent, "A")}。`,
+    "并联电路中，各支路电压相同，所以每个电阻两端电压都等于电源电压。",
+    "各支路电流可用 Ii = U / Ri 计算，所有支路电流之和等于总电流。"
+  ];
+
+  return { equivalentResistance, totalCurrent, details, steps };
+}
+
+// 点击按钮后，根据连接方式计算电路结果
+solveBtn.addEventListener("click", function () {
   const voltage = Number(voltageInput.value);
-  const current = Number(currentInput.value);
-  const powerFactor = Number(powerFactorInput.value);
-  const useHours = Number(useHoursInput.value);
-  const price = Number(priceInput.value);
+  const resistors = parseResistors(resistorsInput.value);
+  const connectionType = connectionTypeSelect.value;
 
-  // 检查功率计算输入是否有效
-  if (voltage <= 0 || current <= 0 || powerFactor <= 0 || powerFactor > 1) {
-    messageText.textContent = "请输入有效数值：电压和电流要大于 0，功率因数要在 0 到 1 之间。";
-    resetResults();
+  // 检查电压是否合法
+  if (voltage <= 0) {
+    messageText.textContent = "请输入大于 0 的电源电压。";
+    resetResult();
     return;
   }
 
-  // 检查电费估算输入是否有效
-  if (useHours < 0 || price < 0) {
-    messageText.textContent = "使用时间和电价不能为负数。";
-    resetResults();
+  // 检查电阻列表是否合法
+  if (resistors.length === 0 || resistors.some((value) => value <= 0)) {
+    messageText.textContent = "请输入有效电阻值，多个电阻请用英文逗号分隔，例如：10, 20, 30。";
+    resetResult();
     return;
   }
 
-  // 单相功率公式：P = U * I * cosφ，单位为 W
-  const singlePhasePower = voltage * current * powerFactor;
+  const result = connectionType === "series"
+    ? solveSeries(voltage, resistors)
+    : solveParallel(voltage, resistors);
 
-  // 三相功率公式：P = √3 * U * I * cosφ，单位为 W
-  const threePhasePower = Math.sqrt(3) * voltage * current * powerFactor;
-
-  // 耗电量公式：E = 功率(kW) * 使用时间(h)
-  const singlePhaseEnergy = (singlePhasePower / 1000) * useHours;
-  const threePhaseEnergy = (threePhasePower / 1000) * useHours;
-
-  // 电费公式：费用 = 耗电量(kWh) * 电价(元/kWh)
-  const singlePhaseCost = singlePhaseEnergy * price;
-  const threePhaseCost = threePhaseEnergy * price;
-
-  singlePhasePowerText.textContent = formatPower(singlePhasePower);
-  threePhasePowerText.textContent = formatPower(threePhasePower);
-  singlePhaseEnergyText.textContent = formatEnergy(singlePhaseEnergy);
-  threePhaseEnergyText.textContent = formatEnergy(threePhaseEnergy);
-  singlePhaseCostText.textContent = formatCost(singlePhaseCost);
-  threePhaseCostText.textContent = formatCost(threePhaseCost);
+  equivalentResistanceText.textContent = formatNumber(result.equivalentResistance, "Ω");
+  totalCurrentText.textContent = formatNumber(result.totalCurrent, "A");
+  renderResistorDetails(result.details);
+  renderSteps(result.steps);
   messageText.textContent = "";
 });

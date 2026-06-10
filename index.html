@@ -3,54 +3,54 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Electrical Power Calculator</title>
+  <title>Circuit Problem Solver Lite</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
-    <section class="calculator">
-      <h1>Electrical Power Calculator</h1>
-      <p class="subtitle">电功率与电费估算工具</p>
+    <section class="solver">
+      <header class="header">
+        <h1>Circuit Problem Solver Lite</h1>
+        <p>纯电阻串联 / 并联电路文本解题器</p>
+      </header>
 
-      <div class="form-section">
-        <h2>功率计算</h2>
+      <section class="panel">
+        <h2>输入条件</h2>
 
-        <!-- 输入区域：用户填写电压、电流和功率因数 -->
-        <label for="voltage">电压 V</label>
-        <input id="voltage" type="number" min="0" step="0.01" placeholder="例如：220">
+        <!-- 输入电源电压，单位为伏特 V -->
+        <label for="voltage">电源电压 U / V</label>
+        <input id="voltage" type="number" min="0" step="0.01" placeholder="例如：12">
 
-        <label for="current">电流 A</label>
-        <input id="current" type="number" min="0" step="0.01" placeholder="例如：10">
+        <!-- 输入多个电阻值，使用逗号分隔 -->
+        <label for="resistors">电阻值 R / Ω</label>
+        <input id="resistors" type="text" placeholder="例如：10, 20, 30">
 
-        <label for="powerFactor">功率因数 cosφ</label>
-        <input id="powerFactor" type="number" min="0" max="1" step="0.01" placeholder="例如：0.85">
-      </div>
+        <!-- 选择连接方式：串联或并联 -->
+        <label for="connectionType">连接方式</label>
+        <select id="connectionType">
+          <option value="series">串联</option>
+          <option value="parallel">并联</option>
+        </select>
 
-      <div class="form-section">
-        <h2>电费估算</h2>
+        <button id="solveBtn" type="button">生成解题结果</button>
+        <p id="message" class="message"></p>
+      </section>
 
-        <!-- 电费估算区域：用户填写使用时间和电价 -->
-        <label for="useHours">使用时间 h</label>
-        <input id="useHours" type="number" min="0" step="0.01" placeholder="例如：8">
-
-        <label for="price">电价 元/kWh</label>
-        <input id="price" type="number" min="0" step="0.01" placeholder="例如：0.6">
-      </div>
-
-      <button id="calculateBtn" type="button">计算</button>
-
-      <!-- 结果区域：显示功率、耗电量和电费 -->
-      <div class="result">
+      <section class="panel result-panel">
         <h2>计算结果</h2>
-        <p>单相功率：<strong id="singlePhasePower">--</strong></p>
-        <p>三相功率：<strong id="threePhasePower">--</strong></p>
-        <p>单相耗电量：<strong id="singlePhaseEnergy">--</strong></p>
-        <p>三相耗电量：<strong id="threePhaseEnergy">--</strong></p>
-        <p>单相电费：<strong id="singlePhaseCost">--</strong></p>
-        <p>三相电费：<strong id="threePhaseCost">--</strong></p>
-      </div>
+        <div class="summary">
+          <p>等效电阻：<strong id="equivalentResistance">--</strong></p>
+          <p>总电流：<strong id="totalCurrent">--</strong></p>
+        </div>
 
-      <p id="message" class="message"></p>
+        <!-- 每个电阻的电压和电流会由 JavaScript 自动生成 -->
+        <div id="resistorDetails" class="details"></div>
+      </section>
+
+      <section class="panel steps-panel">
+        <h2>中文解题步骤</h2>
+        <ol id="solutionSteps"></ol>
+      </section>
     </section>
   </main>
 
