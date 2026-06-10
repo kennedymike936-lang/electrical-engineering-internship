@@ -21,9 +21,9 @@ electrical-power-calculator/
 - 估算耗电量
 - 估算电费
 
-### 2. Circuit Problem Solver Lite
+### 2. Circuit Problem Solver Lite V2
 
-纯电阻串联 / 并联电路文本解题器。
+拼图式电路编辑器雏形。
 
 位置：
 
@@ -33,12 +33,12 @@ circuit-problem-solver-lite/
 
 主要功能：
 
-- 输入电源电压和电阻值
-- 选择串联或并联
-- 计算等效电阻
-- 计算总电流
-- 计算各电阻电压和电流
-- 自动生成中文解题步骤
+- 左侧元件工具栏
+- 右侧网格画布
+- 拖拽直流电源、电阻、电容、电感、导线到画布
+- 点击元件后修改数值
+- 使用 `components` 数组记录元件数据
+- 页面底部实时显示 JSON 数据
 
 ## 使用方法
 

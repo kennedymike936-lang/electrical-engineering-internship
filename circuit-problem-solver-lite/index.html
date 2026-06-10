@@ -3,54 +3,90 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Circuit Problem Solver Lite</title>
+  <title>Circuit Problem Solver Lite V2</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
-    <section class="solver">
-      <header class="header">
-        <h1>Circuit Problem Solver Lite</h1>
-        <p>纯电阻串联 / 并联电路文本解题器</p>
-      </header>
+    <header class="topbar">
+      <div>
+        <h1>Circuit Problem Solver Lite V2</h1>
+        <p>拼图式电路编辑器：先搭电路图，再保存结构化数据</p>
+      </div>
+      <button id="clearBtn" class="ghost-button" type="button">清空画布</button>
+    </header>
 
-      <section class="panel">
-        <h2>输入条件</h2>
+    <section class="workspace">
+      <aside class="toolbar" aria-label="元件工具栏">
+        <h2>元件工具栏</h2>
 
-        <!-- 输入电源电压，单位为伏特 V -->
-        <label for="voltage">电源电压 U / V</label>
-        <input id="voltage" type="number" min="0" step="0.01" placeholder="例如：12">
+        <!-- 工具栏元件：拖拽到右侧画布即可创建对应元件 -->
+        <button class="tool-item" type="button" draggable="true" data-type="source">
+          <span class="tool-symbol">V</span>
+          <span>
+            <strong>直流电源</strong>
+            <small>默认 12V</small>
+          </span>
+        </button>
 
-        <!-- 输入多个电阻值，使用逗号分隔 -->
-        <label for="resistors">电阻值 R / Ω</label>
-        <input id="resistors" type="text" placeholder="例如：10, 20, 30">
+        <button class="tool-item" type="button" draggable="true" data-type="resistor">
+          <span class="tool-symbol">R</span>
+          <span>
+            <strong>电阻</strong>
+            <small>默认 10Ω</small>
+          </span>
+        </button>
 
-        <!-- 选择连接方式：串联或并联 -->
-        <label for="connectionType">连接方式</label>
-        <select id="connectionType">
-          <option value="series">串联</option>
-          <option value="parallel">并联</option>
-        </select>
+        <button class="tool-item" type="button" draggable="true" data-type="capacitor">
+          <span class="tool-symbol">C</span>
+          <span>
+            <strong>电容</strong>
+            <small>默认 100uF</small>
+          </span>
+        </button>
 
-        <button id="solveBtn" type="button">生成解题结果</button>
-        <p id="message" class="message"></p>
-      </section>
+        <button class="tool-item" type="button" draggable="true" data-type="inductor">
+          <span class="tool-symbol">L</span>
+          <span>
+            <strong>电感</strong>
+            <small>默认 10mH</small>
+          </span>
+        </button>
 
-      <section class="panel result-panel">
-        <h2>计算结果</h2>
-        <div class="summary">
-          <p>等效电阻：<strong id="equivalentResistance">--</strong></p>
-          <p>总电流：<strong id="totalCurrent">--</strong></p>
+        <button class="tool-item" type="button" draggable="true" data-type="wire">
+          <span class="tool-symbol">W</span>
+          <span>
+            <strong>导线</strong>
+            <small>默认 wire</small>
+          </span>
+        </button>
+
+        <div class="editor-panel">
+          <h2>元件编辑</h2>
+          <p id="selectedName">未选择元件</p>
+          <label for="valueInput">元件数值</label>
+          <input id="valueInput" type="text" placeholder="点击画布元件后修改" disabled>
+          <button id="applyValueBtn" class="apply-button" type="button" disabled>应用修改</button>
+        </div>
+      </aside>
+
+      <section class="canvas-area">
+        <div class="canvas-title">
+          <h2>网格画布</h2>
+          <p>把左侧元件拖到这里，点击画布上的元件可以修改数值。</p>
         </div>
 
-        <!-- 每个电阻的电压和电流会由 JavaScript 自动生成 -->
-        <div id="resistorDetails" class="details"></div>
+        <!-- 画布区域：JavaScript 会把元件渲染到这里 -->
+        <div id="canvas" class="circuit-canvas" aria-label="电路编辑画布"></div>
       </section>
+    </section>
 
-      <section class="panel steps-panel">
-        <h2>中文解题步骤</h2>
-        <ol id="solutionSteps"></ol>
-      </section>
+    <section class="json-panel">
+      <div class="json-header">
+        <h2>components JSON 数据</h2>
+        <span id="countText">0 个元件</span>
+      </div>
+      <pre id="jsonOutput">[]</pre>
     </section>
   </main>
 
