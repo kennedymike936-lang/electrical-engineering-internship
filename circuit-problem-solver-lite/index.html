@@ -13,7 +13,10 @@
         <h1>Circuit Problem Solver Lite V3</h1>
         <p>拼图式电路编辑器：拖拽元件、点击端点连线、保存 JSON 数据。</p>
       </div>
-      <button id="clearBtn" class="ghost-button danger" type="button">清空画布</button>
+      <div class="topbar-actions">
+        <button id="exampleBtn" class="ghost-button" type="button">生成示例电路</button>
+        <button id="clearBtn" class="ghost-button danger" type="button">清空画布</button>
+      </div>
     </header>
 
     <section class="workspace">
@@ -83,7 +86,7 @@
       <section class="canvas-area">
         <div class="canvas-title">
           <h2>网格画布</h2>
-          <p>拖拽元件到画布；点击元件左右端点建立连接。暂不做自动计算。</p>
+          <p>拖拽元件到画布；点击端点建立连接。暂不做自动计算。</p>
         </div>
 
         <!-- 画布区域：SVG 用于画线，元件由 JavaScript 渲染 -->

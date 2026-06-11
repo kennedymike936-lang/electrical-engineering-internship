@@ -20,10 +20,10 @@ const DEFAULT_COMPONENT_HEIGHT = 58;
 
 // 不同元件的默认显示信息
 const componentConfig = {
-  source: { prefix: "V", label: "直流电源", value: "12V", symbol: "V" },
-  resistor: { prefix: "R", label: "电阻", value: "10Ω", symbol: "R" },
-  capacitor: { prefix: "C", label: "电容", value: "100uF", symbol: "C" },
-  inductor: { prefix: "L", label: "电感", value: "10mH", symbol: "L" },
+  source: { prefix: "V", label: "直流电源", value: "12V", symbol: "V", terminals: { left: "-", right: "+" } },
+  resistor: { prefix: "R", label: "电阻", value: "10Ω", symbol: "R", terminals: { left: "1", right: "2" } },
+  capacitor: { prefix: "C", label: "电容", value: "100uF", symbol: "C", terminals: { left: "1", right: "2" } },
+  inductor: { prefix: "L", label: "电感", value: "10mH", symbol: "L", terminals: { left: "1", right: "2" } },
   node: { prefix: "N", label: "等电位点", value: "node", symbol: "●", width: 30, height: 30 }
 };
 
@@ -33,6 +33,7 @@ const componentLayer = document.getElementById("componentLayer");
 const jsonOutput = document.getElementById("jsonOutput");
 const countText = document.getElementById("countText");
 const clearBtn = document.getElementById("clearBtn");
+const exampleBtn = document.getElementById("exampleBtn");
 const selectedName = document.getElementById("selectedName");
 const valueInput = document.getElementById("valueInput");
 const applyValueBtn = document.getElementById("applyValueBtn");
@@ -135,18 +136,35 @@ function getComponentLabel(componentId) {
   }
 
   const config = componentConfig[component.type];
+  if (component.type === "node") {
+    return `${component.id}（${config.label}）`;
+  }
+
   return `${component.id}（${config.label}，${component.value}）`;
 }
 
 function getTerminalLabel(key) {
   const { componentId, side } = parseTerminalKey(key);
-  const sideText = {
-    left: "左端",
-    right: "右端",
-    center: "中心点"
-  }[side] || side;
+  const component = components.find((item) => item.id === componentId);
 
-  return `${getComponentLabel(componentId)}的${sideText}`;
+  if (!component) {
+    return key;
+  }
+
+  const terminalText = getTerminalText(component, side);
+  return `${getComponentLabel(componentId)}的${terminalText}`;
+}
+
+function getTerminalText(component, side) {
+  if (component.type === "source") {
+    return side === "right" ? "正极" : "负极";
+  }
+
+  if (side === "center") {
+    return "中心节点";
+  }
+
+  return side === "right" ? "右端" : "左端";
 }
 
 // 获取端点在画布中的坐标，用于绘制连线
@@ -186,6 +204,25 @@ function addComponent(type, x, y) {
     y: position.y
   });
 
+  render();
+}
+
+function loadExampleCircuit() {
+  components = [
+    { id: "V1", type: "source", value: "12V", x: 72, y: 120 },
+    { id: "R1", type: "resistor", value: "10Ω", x: 288, y: 120 },
+    { id: "N1", type: "node", value: "node", x: 504, y: 144 }
+  ];
+
+  connections = [
+    { from: "V1.right", to: "R1.left" },
+    { from: "R1.right", to: "N1.center" }
+  ];
+
+  clearSelection();
+  pendingTerminal = null;
+  rebuildCounters();
+  setStatus("已生成示例电路。", "success");
   render();
 }
 
@@ -263,8 +300,8 @@ function renderComponents() {
       `;
     } else {
       element.innerHTML = `
-        <span class="terminal left" data-side="left" title="${component.id}.left"></span>
-        <span class="terminal right" data-side="right" title="${component.id}.right"></span>
+        <span class="terminal left" data-side="left" title="${component.id}.left">${config.terminals.left}</span>
+        <span class="terminal right" data-side="right" title="${component.id}.right">${config.terminals.right}</span>
         <span class="component-symbol">${config.symbol}</span>
         <span class="component-name">${component.id}</span>
         <span class="component-value">${component.value}</span>
@@ -409,7 +446,7 @@ function renderSummary() {
   }
 
   const sentences = connections.map((connection, index) => {
-    return `${index + 1}. ${getTerminalLabel(connection.from)}连接到${getTerminalLabel(connection.to)}。`;
+    return `${index + 1}. 将${getTerminalLabel(connection.from)}连接到${getTerminalLabel(connection.to)}。`;
   });
 
   circuitSummary.textContent = sentences.join(" ");
@@ -592,6 +629,8 @@ clearBtn.addEventListener("click", () => {
   setStatus("画布已清空。", "success");
   render();
 });
+
+exampleBtn.addEventListener("click", loadExampleCircuit);
 
 // 应用左侧编辑栏中的数值修改
 applyValueBtn.addEventListener("click", () => {

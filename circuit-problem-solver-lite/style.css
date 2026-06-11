@@ -24,6 +24,13 @@ body {
   margin-bottom: 18px;
 }
 
+.topbar-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .topbar h1,
 .toolbar h2,
 .canvas-title h2,
@@ -378,6 +385,11 @@ body {
   background: #eef2f6;
   transform: translateY(-50%);
   cursor: crosshair;
+  color: #27313f;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 10px;
+  text-align: center;
 }
 
 .terminal.left {
@@ -395,6 +407,7 @@ body {
   height: 16px;
   background: #66717f;
   transform: translate(-50%, -50%);
+  color: transparent;
 }
 
 .terminal.active {
@@ -485,6 +498,14 @@ pre {
   .json-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .topbar-actions {
+    justify-content: stretch;
+  }
+
+  .topbar-actions .ghost-button {
+    width: 100%;
   }
 
   .workspace {
