@@ -6,8 +6,8 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: Arial, "Microsoft YaHei", sans-serif;
-  color: #1f2937;
-  background: #edf2f7;
+  color: #27313f;
+  background: #e8edf3;
 }
 
 .app {
@@ -38,7 +38,7 @@ body {
 .topbar p,
 .canvas-title p {
   margin: 6px 0 0;
-  color: #64748b;
+  color: #637083;
 }
 
 .workspace {
@@ -50,10 +50,10 @@ body {
 .toolbar,
 .canvas-area,
 .json-panel {
-  border: 1px solid #d8dee8;
+  border: 1px solid #cdd5df;
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 10px 24px rgba(31, 41, 55, 0.08);
+  background: #f4f6f8;
+  box-shadow: 0 10px 22px rgba(31, 41, 55, 0.07);
 }
 
 .toolbar {
@@ -72,10 +72,10 @@ body {
   gap: 12px;
   margin-top: 12px;
   padding: 12px;
-  border: 1px solid #d8dee8;
+  border: 1px solid #cdd5df;
   border-radius: 8px;
-  color: #1f2937;
-  background: #f8fafc;
+  color: #27313f;
+  background: #edf1f5;
   text-align: left;
   cursor: grab;
 }
@@ -85,8 +85,8 @@ body {
 }
 
 .tool-item:hover {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: #5678b9;
+  background: #e5ebf3;
 }
 
 .tool-symbol {
@@ -102,45 +102,45 @@ body {
 
 .source-tool .tool-symbol,
 .component.type-source .component-symbol {
-  background: #dc2626;
+  background: #b94a48;
 }
 
 .resistor-tool .tool-symbol,
 .component.type-resistor .component-symbol {
-  background: #2563eb;
+  background: #4f73b8;
 }
 
 .capacitor-tool .tool-symbol,
 .component.type-capacitor .component-symbol {
-  background: #7c3aed;
+  background: #7359a6;
 }
 
 .inductor-tool .tool-symbol,
 .component.type-inductor .component-symbol {
-  background: #0f766e;
+  background: #3f8378;
 }
 
 .wire-tool .tool-symbol,
 .component.type-wire .component-symbol {
-  background: #475569;
+  background: #66717f;
 }
 
 .tool-item small {
   display: block;
   margin-top: 3px;
-  color: #64748b;
+  color: #637083;
 }
 
 .editor-panel {
   margin-top: 18px;
   padding-top: 18px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid #d8dee7;
 }
 
 .editor-panel p,
 .editor-panel small,
 .status-text {
-  color: #64748b;
+  color: #637083;
 }
 
 .editor-panel p {
@@ -158,14 +158,16 @@ body {
 .import-panel textarea {
   width: 100%;
   padding: 10px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #c4ccd7;
   border-radius: 6px;
+  background: #f9fafb;
+  color: #27313f;
   font: inherit;
 }
 
 .editor-panel input:disabled {
-  color: #94a3b8;
-  background: #f1f5f9;
+  color: #8b96a5;
+  background: #e8edf3;
 }
 
 .apply-button {
@@ -175,35 +177,35 @@ body {
   border: 0;
   border-radius: 6px;
   color: #ffffff;
-  background: #0f766e;
+  background: #3f8378;
   font-weight: 700;
   cursor: pointer;
 }
 
 .apply-button:disabled {
   cursor: not-allowed;
-  background: #94a3b8;
+  background: #9aa5b3;
 }
 
 .ghost-button {
   flex: 0 0 auto;
   padding: 10px 14px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #c4ccd7;
   border-radius: 8px;
-  color: #1f2937;
-  background: #ffffff;
+  color: #27313f;
+  background: #eef2f6;
   font-weight: 700;
   cursor: pointer;
 }
 
 .ghost-button:hover {
-  border-color: #2563eb;
-  color: #2563eb;
+  border-color: #5678b9;
+  color: #395f9e;
 }
 
 .ghost-button.danger:hover {
-  border-color: #dc2626;
-  color: #dc2626;
+  border-color: #b94a48;
+  color: #b94a48;
 }
 
 .ghost-button.full {
@@ -212,7 +214,7 @@ body {
 }
 
 .ghost-button:disabled {
-  color: #94a3b8;
+  color: #9aa5b3;
   cursor: not-allowed;
 }
 
@@ -233,18 +235,36 @@ body {
   position: relative;
   min-height: 520px;
   overflow: hidden;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #c4ccd7;
   border-radius: 8px;
-  background-color: #f8fafc;
+  background-color: #eef2f6;
   background-image:
-    linear-gradient(#dbe3ee 1px, transparent 1px),
-    linear-gradient(90deg, #dbe3ee 1px, transparent 1px);
+    linear-gradient(#d4dbe5 1px, transparent 1px),
+    linear-gradient(90deg, #d4dbe5 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
 .circuit-canvas.drag-over {
-  border-color: #2563eb;
-  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.2);
+  border-color: #5678b9;
+  box-shadow: inset 0 0 0 2px rgba(86, 120, 185, 0.22);
+}
+
+.wire-layer,
+.component-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.wire-layer {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.connection-line {
+  stroke: #4b5563;
+  stroke-width: 3;
+  stroke-linecap: round;
 }
 
 .component {
@@ -253,15 +273,15 @@ body {
   padding: 10px 12px;
   border: 2px solid #334155;
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+  background: #f8fafc;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.13);
   cursor: move;
   user-select: none;
 }
 
 .component.selected {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18), 0 8px 18px rgba(15, 23, 42, 0.16);
+  border-color: #5678b9;
+  box-shadow: 0 0 0 3px rgba(86, 120, 185, 0.2), 0 8px 18px rgba(15, 23, 42, 0.13);
 }
 
 .component-name {
@@ -272,7 +292,7 @@ body {
 .component-value {
   display: block;
   margin-top: 4px;
-  color: #475569;
+  color: #5f6b7a;
   font-size: 14px;
 }
 
@@ -289,6 +309,31 @@ body {
   color: #ffffff;
   font-size: 13px;
   font-weight: 700;
+}
+
+.terminal {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #27313f;
+  border-radius: 50%;
+  background: #eef2f6;
+  transform: translateY(-50%);
+  cursor: crosshair;
+}
+
+.terminal.left {
+  left: -9px;
+}
+
+.terminal.right {
+  right: -9px;
+}
+
+.terminal.active {
+  border-color: #b94a48;
+  background: #ffd9d6;
 }
 
 .json-panel {
@@ -312,18 +357,18 @@ body {
 #countText {
   display: inline-block;
   margin-top: 4px;
-  color: #64748b;
+  color: #637083;
 }
 
 pre {
   min-height: 120px;
-  max-height: 260px;
+  max-height: 280px;
   overflow: auto;
   margin: 0;
   padding: 14px;
   border-radius: 8px;
   color: #dbeafe;
-  background: #111827;
+  background: #1f2937;
   font-size: 14px;
   line-height: 1.5;
 }
@@ -342,11 +387,11 @@ pre {
 }
 
 .status-text.error {
-  color: #dc2626;
+  color: #b94a48;
 }
 
 .status-text.success {
-  color: #0f766e;
+  color: #3f8378;
 }
 
 @media (max-width: 760px) {

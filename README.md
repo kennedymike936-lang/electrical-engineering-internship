@@ -21,7 +21,7 @@ electrical-power-calculator/
 - 估算耗电量
 - 估算电费
 
-### 2. Circuit Problem Solver Lite V2.1
+### 2. Circuit Problem Solver Lite V3
 
 拼图式电路编辑器雏形。
 
@@ -39,10 +39,12 @@ circuit-problem-solver-lite/
 - 点击元件后修改数值
 - 删除元件
 - 网格吸附
+- 点击端点生成连线
 - 导入 / 导出 JSON
 - 元件颜色区分
 - 使用 `components` 数组记录元件数据
-- 页面底部实时显示 JSON 数据
+- 使用 `connections` 数组记录连线数据
+- 页面底部实时显示项目 JSON 数据
 
 ## 使用方法
 

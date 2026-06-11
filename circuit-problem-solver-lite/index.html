@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Circuit Problem Solver Lite V2.1</title>
+  <title>Circuit Problem Solver Lite V3</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
     <header class="topbar">
       <div>
-        <h1>Circuit Problem Solver Lite V2.1</h1>
-        <p>拼图式电路编辑器：拖拽元件、修改数值、保存 JSON 数据。</p>
+        <h1>Circuit Problem Solver Lite V3</h1>
+        <p>拼图式电路编辑器：拖拽元件、点击端点连线、保存 JSON 数据。</p>
       </div>
       <button id="clearBtn" class="ghost-button danger" type="button">清空画布</button>
     </header>
@@ -68,37 +68,49 @@
           <input id="valueInput" type="text" placeholder="点击画布元件后修改" disabled>
           <button id="applyValueBtn" class="apply-button" type="button" disabled>应用修改</button>
           <button id="deleteBtn" class="ghost-button danger full" type="button" disabled>删除元件</button>
-          <small>提示：选中元件后也可以按 Delete 键删除。</small>
+          <small>提示：点击两个端点即可连线；选中元件后可按 Delete 删除。</small>
+        </div>
+
+        <div class="editor-panel">
+          <h2>连线状态</h2>
+          <p id="connectionHint">未选择端点</p>
+          <button id="cancelConnectionBtn" class="ghost-button full" type="button" disabled>取消当前连线</button>
         </div>
       </aside>
 
       <section class="canvas-area">
         <div class="canvas-title">
           <h2>网格画布</h2>
-          <p>拖拽元件到画布；元件会自动吸附到网格。暂不做连线和计算。</p>
+          <p>拖拽元件到画布；点击元件左右端点建立连接。暂不做自动计算。</p>
         </div>
 
-        <!-- 画布区域：JavaScript 会把元件渲染到这里 -->
-        <div id="canvas" class="circuit-canvas" aria-label="电路编辑画布"></div>
+        <!-- 画布区域：SVG 用于画线，元件由 JavaScript 渲染 -->
+        <div id="canvas" class="circuit-canvas" aria-label="电路编辑画布">
+          <svg id="wireLayer" class="wire-layer" aria-hidden="true"></svg>
+          <div id="componentLayer" class="component-layer"></div>
+        </div>
       </section>
     </section>
 
     <section class="json-panel">
       <div class="json-header">
         <div>
-          <h2>components JSON 数据</h2>
-          <span id="countText">0 个元件</span>
+          <h2>project JSON 数据</h2>
+          <span id="countText">0 个元件，0 条连接</span>
         </div>
         <div class="json-actions">
           <button id="copyJsonBtn" class="ghost-button" type="button">复制 JSON</button>
           <button id="downloadJsonBtn" class="ghost-button" type="button">下载 JSON</button>
         </div>
       </div>
-      <pre id="jsonOutput">[]</pre>
+      <pre id="jsonOutput">{
+  "components": [],
+  "connections": []
+}</pre>
 
       <div class="import-panel">
         <label for="importInput">导入 JSON</label>
-        <textarea id="importInput" rows="5" placeholder="把之前导出的 components JSON 粘贴到这里"></textarea>
+        <textarea id="importInput" rows="5" placeholder="可粘贴新版 project JSON，也兼容旧版 components 数组"></textarea>
         <button id="importJsonBtn" class="apply-button" type="button">导入到画布</button>
         <p id="statusText" class="status-text"></p>
       </div>

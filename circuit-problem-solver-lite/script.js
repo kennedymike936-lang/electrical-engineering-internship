@@ -1,6 +1,9 @@
 // components 数组用于保存画布中的所有元件数据
 let components = [];
 
+// connections 数组用于保存元件端点之间的连接关系
+let connections = [];
+
 // counters 用于给不同类型的元件自动生成编号
 const counters = {
   source: 0,
@@ -12,6 +15,8 @@ const counters = {
 
 // 网格大小：元件坐标会自动吸附到 24px 网格
 const GRID_SIZE = 24;
+const COMPONENT_WIDTH = 116;
+const COMPONENT_HEIGHT = 58;
 
 // 不同元件的默认显示信息
 const componentConfig = {
@@ -23,6 +28,8 @@ const componentConfig = {
 };
 
 const canvas = document.getElementById("canvas");
+const wireLayer = document.getElementById("wireLayer");
+const componentLayer = document.getElementById("componentLayer");
 const jsonOutput = document.getElementById("jsonOutput");
 const countText = document.getElementById("countText");
 const clearBtn = document.getElementById("clearBtn");
@@ -30,6 +37,8 @@ const selectedName = document.getElementById("selectedName");
 const valueInput = document.getElementById("valueInput");
 const applyValueBtn = document.getElementById("applyValueBtn");
 const deleteBtn = document.getElementById("deleteBtn");
+const connectionHint = document.getElementById("connectionHint");
+const cancelConnectionBtn = document.getElementById("cancelConnectionBtn");
 const copyJsonBtn = document.getElementById("copyJsonBtn");
 const downloadJsonBtn = document.getElementById("downloadJsonBtn");
 const importInput = document.getElementById("importInput");
@@ -38,6 +47,7 @@ const statusText = document.getElementById("statusText");
 const toolItems = document.querySelectorAll(".tool-item");
 
 let selectedComponentId = null;
+let pendingTerminal = null;
 let draggedComponentId = null;
 let draggedToolType = null;
 let dragOffsetX = 0;
@@ -51,8 +61,8 @@ function snapToGrid(value) {
 
 // 把坐标限制在画布范围内，避免元件被拖出画布
 function clampPosition(x, y) {
-  const maxX = Math.max(0, canvas.clientWidth - 130);
-  const maxY = Math.max(0, canvas.clientHeight - 70);
+  const maxX = Math.max(0, canvas.clientWidth - COMPONENT_WIDTH - 20);
+  const maxY = Math.max(0, canvas.clientHeight - COMPONENT_HEIGHT - 20);
 
   return {
     x: Math.min(Math.max(0, snapToGrid(x)), snapToGrid(maxX)),
@@ -83,6 +93,39 @@ function rebuildCounters() {
   });
 }
 
+// 输出当前项目数据
+function getProjectData() {
+  return {
+    components,
+    connections
+  };
+}
+
+// 端点字符串格式：R1.left / R1.right
+function makeTerminalKey(componentId, side) {
+  return `${componentId}.${side}`;
+}
+
+function parseTerminalKey(key) {
+  const [componentId, side] = key.split(".");
+  return { componentId, side };
+}
+
+// 获取端点在画布中的坐标，用于绘制连线
+function getTerminalPosition(key) {
+  const { componentId, side } = parseTerminalKey(key);
+  const component = components.find((item) => item.id === componentId);
+
+  if (!component) {
+    return null;
+  }
+
+  return {
+    x: component.x + (side === "left" ? 0 : COMPONENT_WIDTH),
+    y: component.y + COMPONENT_HEIGHT / 2
+  };
+}
+
 // 根据拖拽落点创建一个新元件
 function addComponent(type, x, y) {
   const config = componentConfig[type];
@@ -99,21 +142,26 @@ function addComponent(type, x, y) {
   render();
 }
 
-// 删除当前选中的元件
+// 删除当前选中的元件，同时删除与它相关的连线
 function deleteSelectedComponent() {
   if (!selectedComponentId) {
     return;
   }
 
   components = components.filter((component) => component.id !== selectedComponentId);
+  connections = connections.filter((connection) => {
+    return !connection.from.startsWith(`${selectedComponentId}.`) &&
+      !connection.to.startsWith(`${selectedComponentId}.`);
+  });
   selectedComponentId = null;
-  setStatus("已删除选中的元件。", "success");
+  pendingTerminal = null;
+  setStatus("已删除选中的元件和相关连线。", "success");
   render();
 }
 
 // 渲染画布中的所有元件
-function renderCanvas() {
-  canvas.innerHTML = "";
+function renderComponents() {
+  componentLayer.innerHTML = "";
 
   components.forEach((component) => {
     const config = componentConfig[component.type];
@@ -129,10 +177,27 @@ function renderCanvas() {
     }
 
     element.innerHTML = `
+      <span class="terminal left" data-side="left" title="${component.id}.left"></span>
+      <span class="terminal right" data-side="right" title="${component.id}.right"></span>
       <span class="component-symbol">${config.symbol}</span>
       <span class="component-name">${component.id}</span>
       <span class="component-value">${component.value}</span>
     `;
+
+    element.querySelectorAll(".terminal").forEach((terminal) => {
+      const side = terminal.dataset.side;
+      const key = makeTerminalKey(component.id, side);
+
+      if (pendingTerminal === key) {
+        terminal.classList.add("active");
+      }
+
+      // 点击端点：第一次选择起点，第二次选择终点并生成连接
+      terminal.addEventListener("click", (event) => {
+        event.stopPropagation();
+        handleTerminalClick(component.id, side);
+      });
+    });
 
     // 单击元件：选中元件，并在左侧编辑栏中修改数值
     element.addEventListener("click", (event) => {
@@ -143,6 +208,10 @@ function renderCanvas() {
 
     // 鼠标按下后进入画布内拖动模式
     element.addEventListener("pointerdown", (event) => {
+      if (event.target.classList.contains("terminal")) {
+        return;
+      }
+
       event.stopPropagation();
       draggedComponentId = component.id;
       selectedComponentId = component.id;
@@ -152,14 +221,73 @@ function renderCanvas() {
       render();
     });
 
-    canvas.appendChild(element);
+    componentLayer.appendChild(element);
   });
+}
+
+// 渲染所有连接线
+function renderConnections() {
+  wireLayer.innerHTML = "";
+
+  connections.forEach((connection) => {
+    const from = getTerminalPosition(connection.from);
+    const to = getTerminalPosition(connection.to);
+
+    if (!from || !to) {
+      return;
+    }
+
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("class", "connection-line");
+    line.setAttribute("x1", from.x);
+    line.setAttribute("y1", from.y);
+    line.setAttribute("x2", to.x);
+    line.setAttribute("y2", to.y);
+    wireLayer.appendChild(line);
+  });
+}
+
+// 处理端点点击，建立 connections 数据
+function handleTerminalClick(componentId, side) {
+  const key = makeTerminalKey(componentId, side);
+
+  if (!pendingTerminal) {
+    pendingTerminal = key;
+    setStatus(`已选择起点 ${key}，请点击另一个端点完成连线。`, "success");
+    render();
+    return;
+  }
+
+  if (pendingTerminal === key) {
+    pendingTerminal = null;
+    setStatus("已取消当前端点选择。", "");
+    render();
+    return;
+  }
+
+  const exists = connections.some((connection) => {
+    return (connection.from === pendingTerminal && connection.to === key) ||
+      (connection.from === key && connection.to === pendingTerminal);
+  });
+
+  if (!exists) {
+    connections.push({
+      from: pendingTerminal,
+      to: key
+    });
+    setStatus(`已连接 ${pendingTerminal} 到 ${key}。`, "success");
+  } else {
+    setStatus("这两个端点已经连接过了。", "");
+  }
+
+  pendingTerminal = null;
+  render();
 }
 
 // 渲染底部 JSON 数据
 function renderJson() {
-  jsonOutput.textContent = JSON.stringify(components, null, 2);
-  countText.textContent = `${components.length} 个元件`;
+  jsonOutput.textContent = JSON.stringify(getProjectData(), null, 2);
+  countText.textContent = `${components.length} 个元件，${connections.length} 条连接`;
 }
 
 // 更新左侧元件编辑栏
@@ -172,14 +300,16 @@ function updateEditor() {
     valueInput.disabled = true;
     applyValueBtn.disabled = true;
     deleteBtn.disabled = true;
-    return;
+  } else {
+    selectedName.textContent = `当前选择：${component.id}`;
+    valueInput.value = component.value;
+    valueInput.disabled = false;
+    applyValueBtn.disabled = false;
+    deleteBtn.disabled = false;
   }
 
-  selectedName.textContent = `当前选择：${component.id}`;
-  valueInput.value = component.value;
-  valueInput.disabled = false;
-  applyValueBtn.disabled = false;
-  deleteBtn.disabled = false;
+  connectionHint.textContent = pendingTerminal ? `已选择：${pendingTerminal}` : "未选择端点";
+  cancelConnectionBtn.disabled = !pendingTerminal;
 }
 
 // 显示底部操作提示
@@ -190,7 +320,8 @@ function setStatus(message, type = "") {
 
 // 统一渲染页面
 function render() {
-  renderCanvas();
+  renderConnections();
+  renderComponents();
   renderJson();
   updateEditor();
 }
@@ -315,7 +446,7 @@ document.addEventListener("pointerup", (event) => {
   canvas.classList.remove("drag-over");
 });
 
-// 清空画布和 JSON 数据
+// 清空画布、元件数据和连接数据
 clearBtn.addEventListener("click", () => {
   const confirmed = window.confirm("确定要清空画布吗？");
 
@@ -324,7 +455,9 @@ clearBtn.addEventListener("click", () => {
   }
 
   components = [];
+  connections = [];
   selectedComponentId = null;
+  pendingTerminal = null;
   rebuildCounters();
   setStatus("画布已清空。", "success");
   render();
@@ -346,6 +479,13 @@ applyValueBtn.addEventListener("click", () => {
 // 删除按钮
 deleteBtn.addEventListener("click", deleteSelectedComponent);
 
+// 取消当前连线起点
+cancelConnectionBtn.addEventListener("click", () => {
+  pendingTerminal = null;
+  setStatus("已取消当前连线。", "");
+  render();
+});
+
 // Delete 键删除当前选中元件
 document.addEventListener("keydown", (event) => {
   if (event.key === "Delete" && selectedComponentId) {
@@ -355,36 +495,36 @@ document.addEventListener("keydown", (event) => {
 
 // 复制 JSON 到剪贴板
 copyJsonBtn.addEventListener("click", async () => {
-  await navigator.clipboard.writeText(JSON.stringify(components, null, 2));
+  await navigator.clipboard.writeText(JSON.stringify(getProjectData(), null, 2));
   setStatus("JSON 已复制到剪贴板。", "success");
 });
 
 // 下载 JSON 文件
 downloadJsonBtn.addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(components, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(getProjectData(), null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
 
   link.href = url;
-  link.download = "circuit-components.json";
+  link.download = "circuit-project.json";
   link.click();
   URL.revokeObjectURL(url);
   setStatus("JSON 文件已开始下载。", "success");
 });
 
-// 检查导入的 JSON 数据是否符合 components 数组格式
+// 检查导入的 components 数据是否符合格式
 function normalizeImportedComponents(data) {
   if (!Array.isArray(data)) {
-    throw new Error("JSON 顶层必须是数组。");
+    throw new Error("components 必须是数组。");
   }
 
   return data.map((item, index) => {
     if (!item || typeof item !== "object") {
-      throw new Error(`第 ${index + 1} 项不是有效对象。`);
+      throw new Error(`第 ${index + 1} 个元件不是有效对象。`);
     }
 
     if (!componentConfig[item.type]) {
-      throw new Error(`第 ${index + 1} 项的 type 不支持。`);
+      throw new Error(`第 ${index + 1} 个元件的 type 不支持。`);
     }
 
     const config = componentConfig[item.type];
@@ -402,12 +542,46 @@ function normalizeImportedComponents(data) {
   });
 }
 
-// 导入 JSON 并恢复画布
+// 检查导入的 connections 数据是否符合格式
+function normalizeImportedConnections(data, nextComponents) {
+  if (!Array.isArray(data)) {
+    return [];
+  }
+
+  const validIds = new Set(nextComponents.map((component) => component.id));
+
+  return data.filter((connection) => {
+    if (!connection || typeof connection !== "object") {
+      return false;
+    }
+
+    const from = parseTerminalKey(String(connection.from || ""));
+    const to = parseTerminalKey(String(connection.to || ""));
+    return validIds.has(from.componentId) &&
+      validIds.has(to.componentId) &&
+      ["left", "right"].includes(from.side) &&
+      ["left", "right"].includes(to.side);
+  }).map((connection) => ({
+    from: String(connection.from),
+    to: String(connection.to)
+  }));
+}
+
+// 导入 JSON 并恢复画布，兼容旧版 components 数组
 importJsonBtn.addEventListener("click", () => {
   try {
     const imported = JSON.parse(importInput.value);
-    components = normalizeImportedComponents(imported);
+    const nextComponents = Array.isArray(imported)
+      ? normalizeImportedComponents(imported)
+      : normalizeImportedComponents(imported.components);
+    const nextConnections = Array.isArray(imported)
+      ? []
+      : normalizeImportedConnections(imported.connections, nextComponents);
+
+    components = nextComponents;
+    connections = nextConnections;
     selectedComponentId = null;
+    pendingTerminal = null;
     rebuildCounters();
     setStatus("JSON 导入成功，画布已恢复。", "success");
     render();
