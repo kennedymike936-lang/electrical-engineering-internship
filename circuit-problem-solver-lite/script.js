@@ -10,13 +10,13 @@ const counters = {
   resistor: 0,
   capacitor: 0,
   inductor: 0,
-  wire: 0
+  node: 0
 };
 
 // 网格大小：元件坐标会自动吸附到 24px 网格
 const GRID_SIZE = 24;
-const COMPONENT_WIDTH = 116;
-const COMPONENT_HEIGHT = 58;
+const DEFAULT_COMPONENT_WIDTH = 116;
+const DEFAULT_COMPONENT_HEIGHT = 58;
 
 // 不同元件的默认显示信息
 const componentConfig = {
@@ -24,7 +24,7 @@ const componentConfig = {
   resistor: { prefix: "R", label: "电阻", value: "10Ω", symbol: "R" },
   capacitor: { prefix: "C", label: "电容", value: "100uF", symbol: "C" },
   inductor: { prefix: "L", label: "电感", value: "10mH", symbol: "L" },
-  wire: { prefix: "W", label: "导线", value: "wire", symbol: "W" }
+  node: { prefix: "N", label: "等电位点", value: "node", symbol: "●", width: 58, height: 58 }
 };
 
 const canvas = document.getElementById("canvas");
@@ -53,6 +53,8 @@ let draggedToolType = null;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
 let toolPreview = null;
+let currentToolPointerId = null;
+let toolDragCreated = false;
 
 // 将普通坐标吸附到最近的网格点
 function snapToGrid(value) {
@@ -60,9 +62,19 @@ function snapToGrid(value) {
 }
 
 // 把坐标限制在画布范围内，避免元件被拖出画布
-function clampPosition(x, y) {
-  const maxX = Math.max(0, canvas.clientWidth - COMPONENT_WIDTH - 20);
-  const maxY = Math.max(0, canvas.clientHeight - COMPONENT_HEIGHT - 20);
+function getComponentSize(type) {
+  const config = componentConfig[type] || {};
+
+  return {
+    width: config.width || DEFAULT_COMPONENT_WIDTH,
+    height: config.height || DEFAULT_COMPONENT_HEIGHT
+  };
+}
+
+function clampPosition(x, y, type = "resistor") {
+  const size = getComponentSize(type);
+  const maxX = Math.max(0, canvas.clientWidth - size.width - 20);
+  const maxY = Math.max(0, canvas.clientHeight - size.height - 20);
 
   return {
     x: Math.min(Math.max(0, snapToGrid(x)), snapToGrid(maxX)),
@@ -120,16 +132,18 @@ function getTerminalPosition(key) {
     return null;
   }
 
+  const size = getComponentSize(component.type);
+
   return {
-    x: component.x + (side === "left" ? 0 : COMPONENT_WIDTH),
-    y: component.y + COMPONENT_HEIGHT / 2
+    x: component.x + (side === "left" ? 0 : size.width),
+    y: component.y + size.height / 2
   };
 }
 
 // 根据拖拽落点创建一个新元件
 function addComponent(type, x, y) {
   const config = componentConfig[type];
-  const position = clampPosition(x, y);
+  const position = clampPosition(x, y, type);
 
   components.push({
     id: createComponentId(type),
@@ -171,6 +185,8 @@ function renderComponents() {
     element.dataset.id = component.id;
     element.style.left = `${component.x}px`;
     element.style.top = `${component.y}px`;
+    element.style.width = `${getComponentSize(component.type).width}px`;
+    element.style.height = `${getComponentSize(component.type).height}px`;
 
     if (component.id === selectedComponentId) {
       element.classList.add("selected");
@@ -192,8 +208,10 @@ function renderComponents() {
         terminal.classList.add("active");
       }
 
-      // 点击端点：第一次选择起点，第二次选择终点并生成连接
-      terminal.addEventListener("click", (event) => {
+      // 点击端点：第一次选择起点，第二次选择终点并生成连接。
+      // 这里使用 pointerdown，避免端点点击被元件拖拽或画布点击逻辑干扰。
+      terminal.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
         event.stopPropagation();
         handleTerminalClick(component.id, side);
       });
@@ -329,12 +347,15 @@ function render() {
 // 创建工具栏拖拽预览，让拖拽过程更直观
 function createToolPreview(type, x, y) {
   const config = componentConfig[type];
+  const size = getComponentSize(type);
   const preview = document.createElement("div");
   preview.className = `component type-${type}`;
   preview.style.pointerEvents = "none";
   preview.style.position = "fixed";
-  preview.style.left = `${x - 58}px`;
-  preview.style.top = `${y - 24}px`;
+  preview.style.left = `${x - size.width / 2}px`;
+  preview.style.top = `${y - size.height / 2}px`;
+  preview.style.width = `${size.width}px`;
+  preview.style.height = `${size.height}px`;
   preview.style.opacity = "0.85";
   preview.innerHTML = `
     <span class="component-symbol">${config.symbol}</span>
@@ -351,15 +372,13 @@ function isPointInCanvas(x, y) {
   return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 }
 
-// 工具栏拖拽：记录当前拖拽的元件类型，兼容浏览器原生拖拽
+// 工具栏拖拽：只使用 Pointer 事件创建元件，避免原生拖拽和自定义拖拽重复触发
 toolItems.forEach((tool) => {
-  tool.addEventListener("dragstart", (event) => {
-    event.dataTransfer.setData("component-type", tool.dataset.type);
-  });
-
-  // 自定义拖拽逻辑：比原生 HTML5 拖拽更稳定
   tool.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
     draggedToolType = tool.dataset.type;
+    currentToolPointerId = event.pointerId;
+    toolDragCreated = false;
     toolPreview = createToolPreview(draggedToolType, event.clientX, event.clientY);
     tool.setPointerCapture(event.pointerId);
   });
@@ -375,21 +394,6 @@ canvas.addEventListener("dragleave", () => {
   canvas.classList.remove("drag-over");
 });
 
-// 在画布落点创建元件
-canvas.addEventListener("drop", (event) => {
-  event.preventDefault();
-  canvas.classList.remove("drag-over");
-
-  const type = event.dataTransfer.getData("component-type");
-
-  if (!type || !componentConfig[type]) {
-    return;
-  }
-
-  const rect = canvas.getBoundingClientRect();
-  addComponent(type, event.clientX - rect.left - 58, event.clientY - rect.top - 24);
-});
-
 // 点击空白画布时取消选中
 canvas.addEventListener("click", () => {
   selectedComponentId = null;
@@ -399,8 +403,9 @@ canvas.addEventListener("click", () => {
 // 拖动画布中的已有元件，实时更新 components 中的 x、y
 document.addEventListener("pointermove", (event) => {
   if (toolPreview) {
-    toolPreview.style.left = `${event.clientX - 58}px`;
-    toolPreview.style.top = `${event.clientY - 24}px`;
+    const size = getComponentSize(draggedToolType);
+    toolPreview.style.left = `${event.clientX - size.width / 2}px`;
+    toolPreview.style.top = `${event.clientY - size.height / 2}px`;
     canvas.classList.toggle("drag-over", isPointInCanvas(event.clientX, event.clientY));
     return;
   }
@@ -418,7 +423,8 @@ document.addEventListener("pointermove", (event) => {
 
   const position = clampPosition(
     event.clientX - rect.left - dragOffsetX,
-    event.clientY - rect.top - dragOffsetY
+    event.clientY - rect.top - dragOffsetY,
+    component.type
   );
 
   component.x = position.x;
@@ -428,10 +434,12 @@ document.addEventListener("pointermove", (event) => {
 
 // 松开鼠标时，如果工具栏元件位置在画布内，就创建新元件
 document.addEventListener("pointerup", (event) => {
-  if (draggedToolType) {
-    if (isPointInCanvas(event.clientX, event.clientY)) {
+  if (draggedToolType && event.pointerId === currentToolPointerId) {
+    if (!toolDragCreated && isPointInCanvas(event.clientX, event.clientY)) {
       const rect = canvas.getBoundingClientRect();
-      addComponent(draggedToolType, event.clientX - rect.left - 58, event.clientY - rect.top - 24);
+      const size = getComponentSize(draggedToolType);
+      addComponent(draggedToolType, event.clientX - rect.left - size.width / 2, event.clientY - rect.top - size.height / 2);
+      toolDragCreated = true;
       setStatus("已添加新元件。", "success");
     }
 
@@ -442,6 +450,8 @@ document.addEventListener("pointerup", (event) => {
 
   toolPreview = null;
   draggedToolType = null;
+  currentToolPointerId = null;
+  toolDragCreated = false;
   draggedComponentId = null;
   canvas.classList.remove("drag-over");
 });

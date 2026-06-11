@@ -120,9 +120,10 @@ body {
   background: #3f8378;
 }
 
-.wire-tool .tool-symbol,
-.component.type-wire .component-symbol {
+.node-tool .tool-symbol {
   background: #66717f;
+  border-radius: 50%;
+  font-size: 15px;
 }
 
 .tool-item small {
@@ -269,7 +270,9 @@ body {
 
 .component {
   position: absolute;
-  min-width: 116px;
+  width: 116px;
+  height: 58px;
+  min-width: 0;
   padding: 10px 12px;
   border: 2px solid #334155;
   border-radius: 8px;
@@ -277,6 +280,26 @@ body {
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.13);
   cursor: move;
   user-select: none;
+}
+
+.component.type-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.component.type-node .component-symbol {
+  display: none;
+}
+
+.component.type-node .component-name {
+  font-size: 14px;
+}
+
+.component.type-node .component-value {
+  display: none;
 }
 
 .component.selected {
