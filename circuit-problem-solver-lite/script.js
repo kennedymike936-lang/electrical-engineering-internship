@@ -191,6 +191,17 @@ function getTerminalPosition(key) {
   };
 }
 
+// 生成直角折线坐标，让导线更接近电路图中的横平竖直画法
+function getOrthogonalWirePoints(from, to) {
+  const midX = from.x + (to.x - from.x) / 2;
+
+  if (from.x === to.x || from.y === to.y) {
+    return `${from.x},${from.y} ${to.x},${to.y}`;
+  }
+
+  return `${from.x},${from.y} ${midX},${from.y} ${midX},${to.y} ${to.x},${to.y}`;
+}
+
 // 根据拖拽落点创建一个新元件
 function addComponent(type, x, y) {
   const config = componentConfig[type];
@@ -366,18 +377,17 @@ function renderConnections() {
     }
 
     const lineGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    const points = getOrthogonalWirePoints(from, to);
 
-    [hitArea, line].forEach((item) => {
-      item.setAttribute("x1", from.x);
-      item.setAttribute("y1", from.y);
-      item.setAttribute("x2", to.x);
-      item.setAttribute("y2", to.y);
-    });
+    hitArea.setAttribute("points", points);
+    line.setAttribute("points", points);
 
     hitArea.setAttribute("class", "connection-hit-area");
     line.setAttribute("class", index === selectedConnectionIndex ? "connection-line selected" : "connection-line");
+    hitArea.dataset.connectionIndex = String(index);
+    line.dataset.connectionIndex = String(index);
     lineGroup.appendChild(hitArea);
     lineGroup.appendChild(line);
     const selectCurrentLine = (event) => {
@@ -551,6 +561,15 @@ canvas.addEventListener("click", () => {
 });
 
 wireLayer.addEventListener("pointerdown", (event) => {
+  const connectionIndex = event.target.dataset ? event.target.dataset.connectionIndex : null;
+
+  if (connectionIndex !== null && connectionIndex !== undefined) {
+    event.preventDefault();
+    event.stopPropagation();
+    selectConnection(Number(connectionIndex));
+    return;
+  }
+
   if (event.target === wireLayer) {
     clearSelection();
     render();

@@ -274,9 +274,11 @@ body {
 }
 
 .connection-line {
+  fill: none;
   stroke: #4b5563;
   stroke-width: 4;
-  stroke-linecap: round;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
   cursor: pointer;
   pointer-events: stroke;
 }
@@ -287,9 +289,11 @@ body {
 }
 
 .connection-hit-area {
+  fill: none;
   stroke: transparent;
   stroke-width: 16;
-  stroke-linecap: round;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
   cursor: pointer;
   pointer-events: stroke;
 }
