@@ -15,6 +15,7 @@
       </div>
       <div class="topbar-actions">
         <button id="exampleBtn" class="ghost-button" type="button">生成示例电路</button>
+        <button id="arrangeBtn" class="ghost-button" type="button">整理画布</button>
         <button id="clearBtn" class="ghost-button danger" type="button">清空画布</button>
       </div>
     </header>
@@ -71,6 +72,12 @@
           <input id="valueInput" type="text" placeholder="点击画布元件后修改" disabled>
           <button id="applyValueBtn" class="apply-button" type="button" disabled>应用修改</button>
           <button id="deleteBtn" class="ghost-button danger full" type="button" disabled>删除元件</button>
+          <div class="connection-list">
+            <strong>相关连接</strong>
+            <ul id="componentConnectionList">
+              <li>未选择元件</li>
+            </ul>
+          </div>
           <small>提示：点击两个端点即可连线；选中元件或导线后可按 Delete 删除。</small>
         </div>
 

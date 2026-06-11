@@ -178,6 +178,32 @@ body {
   background: #e8edf3;
 }
 
+.connection-list {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid #d8dee7;
+  border-radius: 8px;
+  background: #edf1f5;
+}
+
+.connection-list strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.connection-list ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.connection-list li {
+  margin: 4px 0;
+  color: #5f6b7a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .apply-button {
   width: 100%;
   margin-top: 10px;

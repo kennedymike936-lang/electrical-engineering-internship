@@ -34,10 +34,12 @@ const jsonOutput = document.getElementById("jsonOutput");
 const countText = document.getElementById("countText");
 const clearBtn = document.getElementById("clearBtn");
 const exampleBtn = document.getElementById("exampleBtn");
+const arrangeBtn = document.getElementById("arrangeBtn");
 const selectedName = document.getElementById("selectedName");
 const valueInput = document.getElementById("valueInput");
 const applyValueBtn = document.getElementById("applyValueBtn");
 const deleteBtn = document.getElementById("deleteBtn");
+const componentConnectionList = document.getElementById("componentConnectionList");
 const connectionHint = document.getElementById("connectionHint");
 const selectedConnectionText = document.getElementById("selectedConnectionText");
 const deleteConnectionBtn = document.getElementById("deleteConnectionBtn");
@@ -234,6 +236,29 @@ function loadExampleCircuit() {
   pendingTerminal = null;
   rebuildCounters();
   setStatus("已生成示例电路。", "success");
+  render();
+}
+
+function arrangeCanvas() {
+  if (components.length === 0) {
+    setStatus("画布中还没有元件可整理。", "");
+    return;
+  }
+
+  components.forEach((component, index) => {
+    const row = Math.floor(index / 3);
+    const column = index % 3;
+    const x = 72 + column * 216;
+    const y = 96 + row * 144;
+    const position = clampPosition(x, y, component.type);
+
+    component.x = position.x;
+    component.y = position.y;
+  });
+
+  selectedConnectionIndex = null;
+  pendingTerminal = null;
+  setStatus("已按网格整理画布。", "success");
   render();
 }
 
@@ -462,6 +487,39 @@ function renderSummary() {
   circuitSummary.textContent = sentences.join(" ");
 }
 
+function getComponentConnections(componentId) {
+  return connections.filter((connection) => {
+    return parseTerminalKey(connection.from).componentId === componentId ||
+      parseTerminalKey(connection.to).componentId === componentId;
+  });
+}
+
+function renderComponentConnectionList(component) {
+  componentConnectionList.innerHTML = "";
+
+  if (!component) {
+    const item = document.createElement("li");
+    item.textContent = "未选择元件";
+    componentConnectionList.appendChild(item);
+    return;
+  }
+
+  const relatedConnections = getComponentConnections(component.id);
+
+  if (relatedConnections.length === 0) {
+    const item = document.createElement("li");
+    item.textContent = "当前元件还没有连接。";
+    componentConnectionList.appendChild(item);
+    return;
+  }
+
+  relatedConnections.forEach((connection) => {
+    const item = document.createElement("li");
+    item.textContent = `${getTerminalLabel(connection.from)} ↔ ${getTerminalLabel(connection.to)}`;
+    componentConnectionList.appendChild(item);
+  });
+}
+
 // 更新左侧元件编辑栏
 function updateEditor() {
   const component = components.find((item) => item.id === selectedComponentId);
@@ -481,6 +539,7 @@ function updateEditor() {
     deleteBtn.disabled = false;
   }
 
+  renderComponentConnectionList(component);
   connectionHint.textContent = pendingTerminal ? `已选择：${pendingTerminal}` : "未选择端点";
   selectedConnectionText.textContent = selectedConnection
     ? `当前导线：${selectedConnection.from} → ${selectedConnection.to}`
@@ -650,6 +709,7 @@ clearBtn.addEventListener("click", () => {
 });
 
 exampleBtn.addEventListener("click", loadExampleCircuit);
+arrangeBtn.addEventListener("click", arrangeCanvas);
 
 // 应用左侧编辑栏中的数值修改
 applyValueBtn.addEventListener("click", () => {
