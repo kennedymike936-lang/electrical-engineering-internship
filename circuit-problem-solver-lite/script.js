@@ -24,7 +24,7 @@ const componentConfig = {
   resistor: { prefix: "R", label: "电阻", value: "10Ω", symbol: "R" },
   capacitor: { prefix: "C", label: "电容", value: "100uF", symbol: "C" },
   inductor: { prefix: "L", label: "电感", value: "10mH", symbol: "L" },
-  node: { prefix: "N", label: "等电位点", value: "node", symbol: "●", width: 58, height: 58 }
+  node: { prefix: "N", label: "等电位点", value: "node", symbol: "●", width: 30, height: 30 }
 };
 
 const canvas = document.getElementById("canvas");
@@ -113,7 +113,7 @@ function getProjectData() {
   };
 }
 
-// 端点字符串格式：R1.left / R1.right
+// 端点字符串格式：R1.left / R1.right / N1.center
 function makeTerminalKey(componentId, side) {
   return `${componentId}.${side}`;
 }
@@ -133,6 +133,13 @@ function getTerminalPosition(key) {
   }
 
   const size = getComponentSize(component.type);
+
+  if (side === "center") {
+    return {
+      x: component.x + size.width / 2,
+      y: component.y + size.height / 2
+    };
+  }
 
   return {
     x: component.x + (side === "left" ? 0 : size.width),
@@ -192,13 +199,20 @@ function renderComponents() {
       element.classList.add("selected");
     }
 
-    element.innerHTML = `
-      <span class="terminal left" data-side="left" title="${component.id}.left"></span>
-      <span class="terminal right" data-side="right" title="${component.id}.right"></span>
-      <span class="component-symbol">${config.symbol}</span>
-      <span class="component-name">${component.id}</span>
-      <span class="component-value">${component.value}</span>
-    `;
+    if (component.type === "node") {
+      element.innerHTML = `
+        <span class="terminal center" data-side="center" title="${component.id}.center"></span>
+        <span class="component-name">${component.id}</span>
+      `;
+    } else {
+      element.innerHTML = `
+        <span class="terminal left" data-side="left" title="${component.id}.left"></span>
+        <span class="terminal right" data-side="right" title="${component.id}.right"></span>
+        <span class="component-symbol">${config.symbol}</span>
+        <span class="component-name">${component.id}</span>
+        <span class="component-value">${component.value}</span>
+      `;
+    }
 
     element.querySelectorAll(".terminal").forEach((terminal) => {
       const side = terminal.dataset.side;
@@ -569,8 +583,8 @@ function normalizeImportedConnections(data, nextComponents) {
     const to = parseTerminalKey(String(connection.to || ""));
     return validIds.has(from.componentId) &&
       validIds.has(to.componentId) &&
-      ["left", "right"].includes(from.side) &&
-      ["left", "right"].includes(to.side);
+      ["left", "right", "center"].includes(from.side) &&
+      ["left", "right", "center"].includes(to.side);
   }).map((connection) => ({
     from: String(connection.from),
     to: String(connection.to)

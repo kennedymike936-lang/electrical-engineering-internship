@@ -287,19 +287,33 @@ body {
   align-items: center;
   justify-content: center;
   padding: 0;
+  border: 0;
   border-radius: 50%;
-}
-
-.component.type-node .component-symbol {
-  display: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .component.type-node .component-name {
-  font-size: 14px;
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  color: #5f6b7a;
+  font-size: 12px;
+  transform: translateX(-50%);
 }
 
+.component.type-node .component-symbol,
 .component.type-node .component-value {
   display: none;
+}
+
+.component.type-node.selected {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.component.type-node.selected .terminal.center {
+  box-shadow: 0 0 0 4px rgba(86, 120, 185, 0.22);
 }
 
 .component.selected {
@@ -352,6 +366,15 @@ body {
 
 .terminal.right {
   right: -9px;
+}
+
+.terminal.center {
+  left: 50%;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  background: #66717f;
+  transform: translate(-50%, -50%);
 }
 
 .terminal.active {
