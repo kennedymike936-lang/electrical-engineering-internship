@@ -68,12 +68,14 @@
           <input id="valueInput" type="text" placeholder="点击画布元件后修改" disabled>
           <button id="applyValueBtn" class="apply-button" type="button" disabled>应用修改</button>
           <button id="deleteBtn" class="ghost-button danger full" type="button" disabled>删除元件</button>
-          <small>提示：点击两个端点即可连线；选中元件后可按 Delete 删除。</small>
+          <small>提示：点击两个端点即可连线；选中元件或导线后可按 Delete 删除。</small>
         </div>
 
         <div class="editor-panel">
           <h2>连线状态</h2>
           <p id="connectionHint">未选择端点</p>
+          <p id="selectedConnectionText">未选择导线</p>
+          <button id="deleteConnectionBtn" class="ghost-button danger full" type="button" disabled>删除选中导线</button>
           <button id="cancelConnectionBtn" class="ghost-button full" type="button" disabled>取消当前连线</button>
         </div>
       </aside>
@@ -102,6 +104,10 @@
           <button id="copyJsonBtn" class="ghost-button" type="button">复制 JSON</button>
           <button id="downloadJsonBtn" class="ghost-button" type="button">下载 JSON</button>
         </div>
+      </div>
+      <div class="summary-panel">
+        <h2>中文连接说明</h2>
+        <p id="circuitSummary">当前还没有连接。</p>
       </div>
       <pre id="jsonOutput">{
   "components": [],
