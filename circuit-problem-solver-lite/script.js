@@ -51,6 +51,7 @@ const importJsonBtn = document.getElementById("importJsonBtn");
 const statusText = document.getElementById("statusText");
 const circuitSummary = document.getElementById("circuitSummary");
 const circuitAnalysis = document.getElementById("circuitAnalysis");
+const calculationResult = document.getElementById("calculationResult");
 const toolItems = document.querySelectorAll(".tool-item");
 
 let selectedComponentId = null;
@@ -616,6 +617,127 @@ function describeComponentConnection(entry) {
   return `${label}：已连接 ${entry.degree} 条导线`;
 }
 
+function getSimplePathComponents(graph) {
+  return findSimplePath(graph)
+    .map((id) => components.find((component) => component.id === id))
+    .filter(Boolean);
+}
+
+// 从类似 12V、10Ω、2.2kΩ 的文本中提取数值，方便做基础计算。
+function parseElectricalValue(value, type) {
+  const text = String(value || "").trim().toLowerCase();
+  const numberMatch = text.match(/-?\d+(\.\d+)?/);
+
+  if (!numberMatch) {
+    return null;
+  }
+
+  const number = Number(numberMatch[0]);
+
+  if (!Number.isFinite(number)) {
+    return null;
+  }
+
+  if (type === "resistor") {
+    if (text.includes("k")) {
+      return number * 1000;
+    }
+
+    if (text.includes("m") && !text.includes("mω")) {
+      return number * 1000000;
+    }
+  }
+
+  return number;
+}
+
+function formatNumber(value, unit) {
+  if (!Number.isFinite(value)) {
+    return `0 ${unit}`;
+  }
+
+  const formatted = Number.isInteger(value)
+    ? String(value)
+    : value.toFixed(3).replace(/\.?0+$/, "");
+
+  return `${formatted} ${unit}`;
+}
+
+function calculateSeriesCircuit() {
+  if (components.length === 0) {
+    return ["当前还没有元件，无法计算。"];
+  }
+
+  const graph = buildComponentGraph();
+  const simplePathComponents = getSimplePathComponents(graph);
+
+  if (simplePathComponents.length === 0) {
+    return ["当前不是单一路径，暂不进行串联计算。"];
+  }
+
+  const unsupported = simplePathComponents.filter((component) => {
+    return !["source", "resistor", "node"].includes(component.type);
+  });
+
+  if (unsupported.length > 0) {
+    return [`当前路径包含 ${unsupported.map((component) => component.id).join("、")}，暂不计算电容、电感或交流相量。`];
+  }
+
+  const sources = simplePathComponents.filter((component) => component.type === "source");
+  const resistors = simplePathComponents.filter((component) => component.type === "resistor");
+
+  if (sources.length !== 1) {
+    return ["串联计算需要恰好 1 个直流电源。"];
+  }
+
+  if (resistors.length === 0) {
+    return ["串联计算至少需要 1 个电阻。"];
+  }
+
+  const voltage = parseElectricalValue(sources[0].value, "source");
+  const resistorValues = resistors.map((component) => ({
+    component,
+    resistance: parseElectricalValue(component.value, "resistor")
+  }));
+  const invalidResistor = resistorValues.find((item) => item.resistance === null || item.resistance <= 0);
+
+  if (voltage === null) {
+    return [`无法识别 ${sources[0].id} 的电压值，请输入类似 12V 的格式。`];
+  }
+
+  if (invalidResistor) {
+    return [`无法识别 ${invalidResistor.component.id} 的电阻值，请输入类似 10Ω 或 2.2kΩ 的格式。`];
+  }
+
+  const totalResistance = resistorValues.reduce((sum, item) => sum + item.resistance, 0);
+  const current = voltage / totalResistance;
+  const lines = [
+    `识别到简单串联路径：${simplePathComponents.map((component) => component.id).join(" → ")}。`,
+    `串联总电阻公式：R总 = ${resistorValues.map((item) => item.component.id).join(" + ")}。`,
+    `R总 = ${formatNumber(totalResistance, "Ω")}。`,
+    `总电流公式：I = U / R总 = ${formatNumber(voltage, "V")} / ${formatNumber(totalResistance, "Ω")}。`,
+    `总电流 I = ${formatNumber(current, "A")}。`
+  ];
+
+  resistorValues.forEach((item) => {
+    const voltageDrop = current * item.resistance;
+    lines.push(`${item.component.id} 分压：U = I × R = ${formatNumber(current, "A")} × ${formatNumber(item.resistance, "Ω")} = ${formatNumber(voltageDrop, "V")}。`);
+  });
+
+  lines.push("说明：这是基础直流串联计算，暂不判断复杂闭合回路、分支电路或电容电感动态过程。");
+  return lines;
+}
+
+function renderCalculation() {
+  calculationResult.innerHTML = "";
+
+  calculateSeriesCircuit().forEach((line) => {
+    const item = document.createElement("li");
+    item.textContent = line;
+    calculationResult.appendChild(item);
+  });
+}
+
 function analyzeCircuit() {
   if (components.length === 0) {
     return ["当前还没有元件。"];
@@ -739,6 +861,7 @@ function render() {
   renderJson();
   renderSummary();
   renderAnalysis();
+  renderCalculation();
   updateEditor();
 }
 
