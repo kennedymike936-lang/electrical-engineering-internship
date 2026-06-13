@@ -24,7 +24,7 @@ const componentConfig = {
   resistor: { prefix: "R", label: "电阻", value: "10Ω", symbol: "R", terminals: { left: "1", right: "2" } },
   capacitor: { prefix: "C", label: "电容", value: "100uF", symbol: "C", terminals: { left: "1", right: "2" } },
   inductor: { prefix: "L", label: "电感", value: "10mH", symbol: "L", terminals: { left: "1", right: "2" } },
-  node: { prefix: "N", label: "等电位点", value: "node", symbol: "●", width: 30, height: 30 }
+  node: { prefix: "N", label: "等电位点", value: "node", symbol: "●", width: 44, height: 44 }
 };
 
 const canvas = document.getElementById("canvas");
@@ -50,12 +50,14 @@ const importInput = document.getElementById("importInput");
 const importJsonBtn = document.getElementById("importJsonBtn");
 const statusText = document.getElementById("statusText");
 const circuitSummary = document.getElementById("circuitSummary");
+const circuitAnalysis = document.getElementById("circuitAnalysis");
 const toolItems = document.querySelectorAll(".tool-item");
 
 let selectedComponentId = null;
 let selectedConnectionIndex = null;
 let pendingTerminal = null;
 let draggedComponentId = null;
+let draggedWireIndex = null;
 let draggedToolType = null;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
@@ -193,15 +195,38 @@ function getTerminalPosition(key) {
   };
 }
 
-// 生成直角折线坐标，让导线更接近电路图中的横平竖直画法
-function getOrthogonalWirePoints(from, to) {
-  const midX = from.x + (to.x - from.x) / 2;
+// 生成直角折线坐标，让导线更接近电路图中的横平竖直画法。
+// 如果导线记录了 bendX / bendY，就使用用户手动拖出的拐点位置。
+function getOrthogonalWirePoints(from, to, connection = {}) {
+  const hasBendX = Number.isFinite(connection.bendX);
+  const hasBendY = Number.isFinite(connection.bendY);
+  const midX = hasBendX ? connection.bendX : from.x + (to.x - from.x) / 2;
+  const midY = hasBendY ? connection.bendY : from.y + (to.y - from.y) / 2;
+
+  if (from.y === to.y && hasBendY) {
+    return `${from.x},${from.y} ${from.x},${midY} ${to.x},${midY} ${to.x},${to.y}`;
+  }
+
+  if (from.x === to.x && hasBendX) {
+    return `${from.x},${from.y} ${midX},${from.y} ${midX},${to.y} ${to.x},${to.y}`;
+  }
 
   if (from.x === to.x || from.y === to.y) {
     return `${from.x},${from.y} ${to.x},${to.y}`;
   }
 
   return `${from.x},${from.y} ${midX},${from.y} ${midX},${to.y} ${to.x},${to.y}`;
+}
+
+// 手动整理导线时显示的小方块位置，用户拖它即可调整折线路径。
+function getWireHandlePosition(from, to, connection) {
+  const bendX = Number.isFinite(connection.bendX) ? connection.bendX : from.x + (to.x - from.x) / 2;
+  const bendY = Number.isFinite(connection.bendY) ? connection.bendY : from.y + (to.y - from.y) / 2;
+
+  return {
+    x: bendX,
+    y: bendY
+  };
 }
 
 // 根据拖拽落点创建一个新元件
@@ -256,9 +281,13 @@ function arrangeCanvas() {
     component.y = position.y;
   });
 
+  connections.forEach((connection) => {
+    delete connection.bendX;
+    delete connection.bendY;
+  });
   selectedConnectionIndex = null;
   pendingTerminal = null;
-  setStatus("已按网格整理画布。", "success");
+  setStatus("已按网格整理画布，并恢复导线为自动折线。", "success");
   render();
 }
 
@@ -404,7 +433,7 @@ function renderConnections() {
     const lineGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
     const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
     const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    const points = getOrthogonalWirePoints(from, to);
+    const points = getOrthogonalWirePoints(from, to, connection);
 
     hitArea.setAttribute("points", points);
     line.setAttribute("points", points);
@@ -415,6 +444,34 @@ function renderConnections() {
     line.dataset.connectionIndex = String(index);
     lineGroup.appendChild(hitArea);
     lineGroup.appendChild(line);
+
+    if (index === selectedConnectionIndex) {
+      const handlePosition = getWireHandlePosition(from, to, connection);
+
+      if (handlePosition) {
+        const handle = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+
+        handle.setAttribute("class", "wire-handle");
+        handle.classList.add(from.y === to.y ? "vertical-drag" : "horizontal-drag");
+        handle.setAttribute("x", String(handlePosition.x - 7));
+        handle.setAttribute("y", String(handlePosition.y - 7));
+        handle.setAttribute("width", "14");
+        handle.setAttribute("height", "14");
+        handle.setAttribute("rx", "3");
+        handle.dataset.connectionIndex = String(index);
+        lineGroup.appendChild(handle);
+
+        handle.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          draggedWireIndex = index;
+          selectedConnectionIndex = index;
+          handle.setPointerCapture(event.pointerId);
+          setStatus("正在整理导线路径。", "success");
+        });
+      }
+    }
+
     const selectCurrentLine = (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -485,6 +542,127 @@ function renderSummary() {
   });
 
   circuitSummary.textContent = sentences.join(" ");
+}
+
+function buildComponentGraph() {
+  const graph = new Map();
+
+  components.forEach((component) => {
+    graph.set(component.id, {
+      component,
+      degree: 0,
+      neighbors: new Set()
+    });
+  });
+
+  connections.forEach((connection) => {
+    const from = parseTerminalKey(connection.from).componentId;
+    const to = parseTerminalKey(connection.to).componentId;
+
+    if (!graph.has(from) || !graph.has(to) || from === to) {
+      return;
+    }
+
+    graph.get(from).degree += 1;
+    graph.get(to).degree += 1;
+    graph.get(from).neighbors.add(to);
+    graph.get(to).neighbors.add(from);
+  });
+
+  return graph;
+}
+
+function getConnectedComponentIds(graph) {
+  return Array.from(graph.values())
+    .filter((entry) => entry.degree > 0)
+    .map((entry) => entry.component.id);
+}
+
+function findSimplePath(graph) {
+  const connectedIds = getConnectedComponentIds(graph);
+
+  if (connectedIds.length < 2) {
+    return [];
+  }
+
+  const endpoints = connectedIds.filter((id) => graph.get(id).degree === 1);
+  const hasOnlyPathDegrees = connectedIds.every((id) => graph.get(id).degree <= 2);
+
+  if (endpoints.length !== 2 || !hasOnlyPathDegrees) {
+    return [];
+  }
+
+  const path = [];
+  const visited = new Set();
+  let currentId = endpoints[0];
+  let previousId = null;
+
+  while (currentId) {
+    path.push(currentId);
+    visited.add(currentId);
+
+    const nextId = Array.from(graph.get(currentId).neighbors)
+      .find((neighborId) => neighborId !== previousId && !visited.has(neighborId));
+
+    previousId = currentId;
+    currentId = nextId || null;
+  }
+
+  return path.length === connectedIds.length ? path : [];
+}
+
+function describeComponentConnection(entry) {
+  const label = getComponentLabel(entry.component.id);
+  return `${label}：已连接 ${entry.degree} 条导线`;
+}
+
+function analyzeCircuit() {
+  if (components.length === 0) {
+    return ["当前还没有元件。"];
+  }
+
+  const graph = buildComponentGraph();
+  const connectedIds = getConnectedComponentIds(graph);
+  const isolatedComponents = components.filter((component) => graph.get(component.id).degree === 0);
+  const nodeCount = components.filter((component) => component.type === "node").length;
+  const simplePath = findSimplePath(graph);
+  const lines = [
+    `当前共有 ${components.length} 个元件、${connections.length} 条导线。`
+  ];
+
+  if (isolatedComponents.length > 0) {
+    lines.push(`还有 ${isolatedComponents.length} 个元件没有接入电路：${isolatedComponents.map((component) => component.id).join("、")}。`);
+  } else {
+    lines.push("所有元件都已经至少连接了一条导线。");
+  }
+
+  if (nodeCount > 0) {
+    lines.push(`检测到 ${nodeCount} 个等电位点，可用于表示同一电位的汇合位置。`);
+  }
+
+  if (simplePath.length >= 2) {
+    lines.push(`初步判断：${simplePath.join(" → ")} 形成一条简单连接路径，后续可以在这里继续做串联识别。`);
+  } else if (connectedIds.length > 0) {
+    lines.push("当前连接关系不是单一路径，可能存在分支、回路或多个独立部分。");
+  } else {
+    lines.push("当前还没有形成可分析的连接路径。");
+  }
+
+  Array.from(graph.values()).forEach((entry) => {
+    lines.push(describeComponentConnection(entry));
+  });
+
+  return lines;
+}
+
+function renderAnalysis() {
+  circuitAnalysis.innerHTML = "";
+
+  analyzeCircuit().forEach((line) => {
+    const item = document.createElement("li");
+    item.textContent = line;
+    circuitAnalysis.appendChild(item);
+  });
 }
 
 function getComponentConnections(componentId) {
@@ -560,6 +738,7 @@ function render() {
   renderComponents();
   renderJson();
   renderSummary();
+  renderAnalysis();
   updateEditor();
 }
 
@@ -645,6 +824,35 @@ document.addEventListener("pointermove", (event) => {
     return;
   }
 
+  if (draggedWireIndex !== null && connections[draggedWireIndex]) {
+    const rect = canvas.getBoundingClientRect();
+    const connection = connections[draggedWireIndex];
+    const from = getTerminalPosition(connection.from);
+    const to = getTerminalPosition(connection.to);
+
+    if (!from || !to) {
+      draggedWireIndex = null;
+      return;
+    }
+
+    if (from.y === to.y) {
+      const minY = Math.min(from.y, to.y) - GRID_SIZE * 3;
+      const maxY = Math.max(from.y, to.y) + GRID_SIZE * 3;
+      const nextBendY = snapToGrid(event.clientY - rect.top);
+
+      connection.bendY = Math.min(Math.max(nextBendY, minY), maxY);
+    } else {
+      const minX = Math.min(from.x, to.x) - GRID_SIZE * 3;
+      const maxX = Math.max(from.x, to.x) + GRID_SIZE * 3;
+      const nextBendX = snapToGrid(event.clientX - rect.left);
+
+      connection.bendX = Math.min(Math.max(nextBendX, minX), maxX);
+    }
+
+    render();
+    return;
+  }
+
   if (!draggedComponentId) {
     return;
   }
@@ -688,6 +896,7 @@ document.addEventListener("pointerup", (event) => {
   currentToolPointerId = null;
   toolDragCreated = false;
   draggedComponentId = null;
+  draggedWireIndex = null;
   canvas.classList.remove("drag-over");
 });
 
@@ -812,10 +1021,22 @@ function normalizeImportedConnections(data, nextComponents) {
       validIds.has(to.componentId) &&
       ["left", "right", "center"].includes(from.side) &&
       ["left", "right", "center"].includes(to.side);
-  }).map((connection) => ({
-    from: String(connection.from),
-    to: String(connection.to)
-  }));
+  }).map((connection) => {
+    const normalized = {
+      from: String(connection.from),
+      to: String(connection.to)
+    };
+
+    if (Number.isFinite(connection.bendX)) {
+      normalized.bendX = Number(connection.bendX);
+    }
+
+    if (Number.isFinite(connection.bendY)) {
+      normalized.bendY = Number(connection.bendY);
+    }
+
+    return normalized;
+  });
 }
 
 // 导入 JSON 并恢复画布，兼容旧版 components 数组

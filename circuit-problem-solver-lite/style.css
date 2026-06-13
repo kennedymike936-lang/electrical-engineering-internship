@@ -324,6 +324,21 @@ body {
   pointer-events: stroke;
 }
 
+.wire-handle {
+  fill: #ffffff;
+  stroke: #b94a48;
+  stroke-width: 2;
+  pointer-events: auto;
+}
+
+.wire-handle.horizontal-drag {
+  cursor: ew-resize;
+}
+
+.wire-handle.vertical-drag {
+  cursor: ns-resize;
+}
+
 .component {
   position: absolute;
   width: 116px;
@@ -352,7 +367,7 @@ body {
 
 .component.type-node .component-name {
   position: absolute;
-  top: 22px;
+  top: 31px;
   left: 50%;
   color: #5f6b7a;
   font-size: 12px;
@@ -433,8 +448,8 @@ body {
 .terminal.center {
   left: 50%;
   top: 50%;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   background: #66717f;
   transform: translate(-50%, -50%);
   color: transparent;
@@ -480,6 +495,23 @@ body {
   margin: 0;
   color: #3f4b5b;
   line-height: 1.6;
+}
+
+.analysis-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analysis-list li {
+  padding: 8px 10px;
+  border: 1px solid #d8dee7;
+  border-radius: 6px;
+  color: #3f4b5b;
+  background: #f7f9fb;
+  line-height: 1.5;
 }
 
 #countText {
