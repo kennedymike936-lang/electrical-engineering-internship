@@ -35,6 +35,7 @@ const countText = document.getElementById("countText");
 const clearBtn = document.getElementById("clearBtn");
 const exampleBtn = document.getElementById("exampleBtn");
 const parallelExampleBtn = document.getElementById("parallelExampleBtn");
+const mixedExampleBtn = document.getElementById("mixedExampleBtn");
 const arrangeBtn = document.getElementById("arrangeBtn");
 const selectedName = document.getElementById("selectedName");
 const valueInput = document.getElementById("valueInput");
@@ -288,6 +289,33 @@ function loadParallelExampleCircuit() {
   pendingTerminal = null;
   rebuildCounters();
   setStatus("已生成并联示例电路。", "success");
+  render();
+}
+
+function loadMixedExampleCircuit() {
+  components = [
+    { id: "V1", type: "source", value: "12V", x: 72, y: 168 },
+    { id: "R1", type: "resistor", value: "4Ω", x: 240, y: 168 },
+    { id: "N1", type: "node", value: "node", x: 432, y: 168 },
+    { id: "N2", type: "node", value: "node", x: 432, y: 336 },
+    { id: "R2", type: "resistor", value: "6Ω", x: 576, y: 120 },
+    { id: "R3", type: "resistor", value: "12Ω", x: 576, y: 264 }
+  ];
+
+  connections = [
+    { from: "V1.right", to: "R1.left" },
+    { from: "R1.right", to: "N1.center" },
+    { from: "V1.left", to: "N2.center" },
+    { from: "N1.center", to: "R2.left" },
+    { from: "R2.right", to: "N2.center" },
+    { from: "N1.center", to: "R3.left" },
+    { from: "R3.right", to: "N2.center" }
+  ];
+
+  clearSelection();
+  pendingTerminal = null;
+  rebuildCounters();
+  setStatus("已生成混联示例电路。", "success");
   render();
 }
 
@@ -701,6 +729,18 @@ function getConnectedComponentIdsByTerminal(terminalKey) {
   }, []);
 }
 
+function getConnectedTerminals(terminalKey) {
+  return connections.reduce((terminals, connection) => {
+    if (connection.from === terminalKey) {
+      terminals.push(connection.to);
+    } else if (connection.to === terminalKey) {
+      terminals.push(connection.from);
+    }
+
+    return terminals;
+  }, []);
+}
+
 function getNodeIdsConnectedToComponent(componentId) {
   const nodeIds = new Set();
 
@@ -726,6 +766,120 @@ function getNodeIdsConnectedToComponent(componentId) {
   });
 
   return Array.from(nodeIds);
+}
+
+function getResistorNodePair(resistorId) {
+  const nodePair = getNodeIdsConnectedToComponent(resistorId).sort();
+  return nodePair.length === 2 ? nodePair : [];
+}
+
+function getMixedCircuitInfo() {
+  const sources = components.filter((component) => component.type === "source");
+  const resistors = components.filter((component) => component.type === "resistor");
+  const unsupported = components.filter((component) => {
+    return !["source", "resistor", "node"].includes(component.type);
+  });
+
+  if (sources.length !== 1 || resistors.length < 3 || unsupported.length > 0) {
+    return null;
+  }
+
+  const source = sources[0];
+  const returnNodes = getConnectedComponentIdsByTerminal(`${source.id}.left`)
+    .filter((id) => components.some((component) => component.id === id && component.type === "node"));
+  const positiveNeighbors = getConnectedTerminals(`${source.id}.right`)
+    .map(parseTerminalKey)
+    .filter(({ componentId }) => components.some((component) => component.id === componentId && component.type === "resistor"));
+
+  if (returnNodes.length !== 1 || positiveNeighbors.length !== 1) {
+    return null;
+  }
+
+  const returnNodeId = returnNodes[0];
+  const seriesResistor = components.find((component) => component.id === positiveNeighbors[0].componentId);
+  const seriesResistorNodeIds = getNodeIdsConnectedToComponent(seriesResistor.id);
+
+  if (seriesResistorNodeIds.length !== 1 || seriesResistorNodeIds[0] === returnNodeId) {
+    return null;
+  }
+
+  const branchNodeId = seriesResistorNodeIds[0];
+  const nodePair = [branchNodeId, returnNodeId].sort();
+  const parallelResistors = resistors.filter((resistor) => {
+    if (resistor.id === seriesResistor.id) {
+      return false;
+    }
+
+    const resistorNodePair = getResistorNodePair(resistor.id);
+    return resistorNodePair.length === 2 &&
+      resistorNodePair[0] === nodePair[0] &&
+      resistorNodePair[1] === nodePair[1];
+  });
+
+  if (parallelResistors.length !== resistors.length - 1 || parallelResistors.length < 2) {
+    return null;
+  }
+
+  return {
+    source,
+    seriesResistor,
+    parallelResistors,
+    branchNodeId,
+    returnNodeId
+  };
+}
+
+function calculateMixedCircuit() {
+  const mixedInfo = getMixedCircuitInfo();
+
+  if (!mixedInfo) {
+    return null;
+  }
+
+  const voltage = parseElectricalValue(mixedInfo.source.value, "source");
+  const seriesResistance = parseElectricalValue(mixedInfo.seriesResistor.value, "resistor");
+  const parallelValues = mixedInfo.parallelResistors.map((component) => ({
+    component,
+    resistance: parseElectricalValue(component.value, "resistor")
+  }));
+  const invalidParallelResistor = parallelValues.find((item) => item.resistance === null || item.resistance <= 0);
+
+  if (voltage === null) {
+    return [`无法识别 ${mixedInfo.source.id} 的电压值，请输入类似 12V 的格式。`];
+  }
+
+  if (seriesResistance === null || seriesResistance <= 0) {
+    return [`无法识别 ${mixedInfo.seriesResistor.id} 的电阻值，请输入类似 10Ω 或 2.2kΩ 的格式。`];
+  }
+
+  if (invalidParallelResistor) {
+    return [`无法识别 ${invalidParallelResistor.component.id} 的电阻值，请输入类似 10Ω 或 2.2kΩ 的格式。`];
+  }
+
+  const reciprocalSum = parallelValues.reduce((sum, item) => sum + 1 / item.resistance, 0);
+  const parallelResistance = 1 / reciprocalSum;
+  const totalResistance = seriesResistance + parallelResistance;
+  const totalCurrent = voltage / totalResistance;
+  const seriesVoltage = totalCurrent * seriesResistance;
+  const parallelVoltage = voltage - seriesVoltage;
+  const lines = [
+    `识别到简单混联电路：${mixedInfo.seriesResistor.id} 串联 ${parallelValues.map((item) => item.component.id).join("、")} 的并联支路。`,
+    `先算并联部分：1 / R并 = ${parallelValues.map((item) => `1 / ${item.component.id}`).join(" + ")}。`,
+    `R并 = ${formatNumber(parallelResistance, "Ω")}。`,
+    `总电阻公式：R总 = ${mixedInfo.seriesResistor.id} + R并 = ${formatNumber(seriesResistance, "Ω")} + ${formatNumber(parallelResistance, "Ω")}。`,
+    `R总 = ${formatNumber(totalResistance, "Ω")}。`,
+    `总电流 I总 = U / R总 = ${formatNumber(voltage, "V")} / ${formatNumber(totalResistance, "Ω")} = ${formatNumber(totalCurrent, "A")}。`,
+    `${mixedInfo.seriesResistor.id} 分压：U = I总 × R = ${formatNumber(totalCurrent, "A")} × ${formatNumber(seriesResistance, "Ω")} = ${formatNumber(seriesVoltage, "V")}。`,
+    `并联支路电压：U并 = ${formatNumber(voltage, "V")} - ${formatNumber(seriesVoltage, "V")} = ${formatNumber(parallelVoltage, "V")}。`
+  ];
+
+  parallelValues.forEach((item) => {
+    const branchCurrent = parallelVoltage / item.resistance;
+    lines.push(`${item.component.id} 支路电流：I = U并 / R = ${formatNumber(parallelVoltage, "V")} / ${formatNumber(item.resistance, "Ω")} = ${formatNumber(branchCurrent, "A")}。`);
+  });
+
+  lines.push("说明：这是基础串并联混合计算，只处理一个串联电阻加一组并联电阻的清晰结构。");
+  return lines;
 }
 
 function getParallelCircuitInfo() {
@@ -878,7 +1032,7 @@ function calculateSeriesCircuit() {
 function renderCalculation() {
   calculationResult.innerHTML = "";
 
-  const calculationLines = calculateParallelCircuit() || calculateSeriesCircuit();
+  const calculationLines = calculateMixedCircuit() || calculateParallelCircuit() || calculateSeriesCircuit();
 
   calculationLines.forEach((line) => {
     const item = document.createElement("li");
@@ -1191,6 +1345,7 @@ clearBtn.addEventListener("click", () => {
 
 exampleBtn.addEventListener("click", loadExampleCircuit);
 parallelExampleBtn.addEventListener("click", loadParallelExampleCircuit);
+mixedExampleBtn.addEventListener("click", loadMixedExampleCircuit);
 arrangeBtn.addEventListener("click", arrangeCanvas);
 
 // 应用左侧编辑栏中的数值修改
