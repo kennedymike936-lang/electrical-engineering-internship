@@ -34,6 +34,7 @@ const jsonOutput = document.getElementById("jsonOutput");
 const countText = document.getElementById("countText");
 const clearBtn = document.getElementById("clearBtn");
 const exampleBtn = document.getElementById("exampleBtn");
+const parallelExampleBtn = document.getElementById("parallelExampleBtn");
 const arrangeBtn = document.getElementById("arrangeBtn");
 const selectedName = document.getElementById("selectedName");
 const valueInput = document.getElementById("valueInput");
@@ -262,6 +263,31 @@ function loadExampleCircuit() {
   pendingTerminal = null;
   rebuildCounters();
   setStatus("已生成示例电路。", "success");
+  render();
+}
+
+function loadParallelExampleCircuit() {
+  components = [
+    { id: "V1", type: "source", value: "12V", x: 72, y: 168 },
+    { id: "N1", type: "node", value: "node", x: 240, y: 96 },
+    { id: "N2", type: "node", value: "node", x: 240, y: 264 },
+    { id: "R1", type: "resistor", value: "6Ω", x: 384, y: 72 },
+    { id: "R2", type: "resistor", value: "12Ω", x: 384, y: 216 }
+  ];
+
+  connections = [
+    { from: "V1.right", to: "N1.center" },
+    { from: "V1.left", to: "N2.center" },
+    { from: "N1.center", to: "R1.left" },
+    { from: "R1.right", to: "N2.center" },
+    { from: "N1.center", to: "R2.left" },
+    { from: "R2.right", to: "N2.center" }
+  ];
+
+  clearSelection();
+  pendingTerminal = null;
+  rebuildCounters();
+  setStatus("已生成并联示例电路。", "success");
   render();
 }
 
@@ -663,6 +689,127 @@ function formatNumber(value, unit) {
   return `${formatted} ${unit}`;
 }
 
+function getConnectedComponentIdsByTerminal(terminalKey) {
+  return connections.reduce((ids, connection) => {
+    if (connection.from === terminalKey) {
+      ids.push(parseTerminalKey(connection.to).componentId);
+    } else if (connection.to === terminalKey) {
+      ids.push(parseTerminalKey(connection.from).componentId);
+    }
+
+    return ids;
+  }, []);
+}
+
+function getNodeIdsConnectedToComponent(componentId) {
+  const nodeIds = new Set();
+
+  connections.forEach((connection) => {
+    const from = parseTerminalKey(connection.from);
+    const to = parseTerminalKey(connection.to);
+
+    if (from.componentId === componentId) {
+      const target = components.find((component) => component.id === to.componentId);
+
+      if (target && target.type === "node") {
+        nodeIds.add(target.id);
+      }
+    }
+
+    if (to.componentId === componentId) {
+      const target = components.find((component) => component.id === from.componentId);
+
+      if (target && target.type === "node") {
+        nodeIds.add(target.id);
+      }
+    }
+  });
+
+  return Array.from(nodeIds);
+}
+
+function getParallelCircuitInfo() {
+  const sources = components.filter((component) => component.type === "source");
+  const resistors = components.filter((component) => component.type === "resistor");
+  const unsupported = components.filter((component) => {
+    return !["source", "resistor", "node"].includes(component.type);
+  });
+
+  if (sources.length !== 1 || resistors.length < 2 || unsupported.length > 0) {
+    return null;
+  }
+
+  const source = sources[0];
+  const leftNodeIds = getConnectedComponentIdsByTerminal(`${source.id}.left`)
+    .filter((id) => components.some((component) => component.id === id && component.type === "node"));
+  const rightNodeIds = getConnectedComponentIdsByTerminal(`${source.id}.right`)
+    .filter((id) => components.some((component) => component.id === id && component.type === "node"));
+
+  if (leftNodeIds.length !== 1 || rightNodeIds.length !== 1 || leftNodeIds[0] === rightNodeIds[0]) {
+    return null;
+  }
+
+  const nodePair = [leftNodeIds[0], rightNodeIds[0]].sort();
+  const validResistors = resistors.every((resistor) => {
+    const resistorNodePair = getNodeIdsConnectedToComponent(resistor.id).sort();
+    return resistorNodePair.length === 2 &&
+      resistorNodePair[0] === nodePair[0] &&
+      resistorNodePair[1] === nodePair[1];
+  });
+
+  if (!validResistors) {
+    return null;
+  }
+
+  return {
+    source,
+    resistors,
+    nodePair
+  };
+}
+
+function calculateParallelCircuit() {
+  const parallelInfo = getParallelCircuitInfo();
+
+  if (!parallelInfo) {
+    return null;
+  }
+
+  const voltage = parseElectricalValue(parallelInfo.source.value, "source");
+  const resistorValues = parallelInfo.resistors.map((component) => ({
+    component,
+    resistance: parseElectricalValue(component.value, "resistor")
+  }));
+  const invalidResistor = resistorValues.find((item) => item.resistance === null || item.resistance <= 0);
+
+  if (voltage === null) {
+    return [`无法识别 ${parallelInfo.source.id} 的电压值，请输入类似 12V 的格式。`];
+  }
+
+  if (invalidResistor) {
+    return [`无法识别 ${invalidResistor.component.id} 的电阻值，请输入类似 10Ω 或 2.2kΩ 的格式。`];
+  }
+
+  const reciprocalSum = resistorValues.reduce((sum, item) => sum + 1 / item.resistance, 0);
+  const totalResistance = 1 / reciprocalSum;
+  const totalCurrent = voltage / totalResistance;
+  const lines = [
+    `识别到简单并联电路：${resistorValues.map((item) => item.component.id).join("、")} 跨接在 ${parallelInfo.nodePair.join(" 与 ")} 之间。`,
+    `并联总电阻公式：1 / R总 = ${resistorValues.map((item) => `1 / ${item.component.id}`).join(" + ")}。`,
+    `R总 = ${formatNumber(totalResistance, "Ω")}。`,
+    `并联支路电压相同：每个电阻两端电压均为 ${formatNumber(voltage, "V")}。`,
+    `总电流 I总 = U / R总 = ${formatNumber(voltage, "V")} / ${formatNumber(totalResistance, "Ω")} = ${formatNumber(totalCurrent, "A")}。`
+  ];
+
+  resistorValues.forEach((item) => {
+    const branchCurrent = voltage / item.resistance;
+    lines.push(`${item.component.id} 支路电流：I = U / R = ${formatNumber(voltage, "V")} / ${formatNumber(item.resistance, "Ω")} = ${formatNumber(branchCurrent, "A")}。`);
+  });
+
+  lines.push("说明：这是基础直流并联计算，暂不处理混联、复杂回路或电容电感动态过程。");
+  return lines;
+}
+
 function calculateSeriesCircuit() {
   if (components.length === 0) {
     return ["当前还没有元件，无法计算。"];
@@ -731,7 +878,9 @@ function calculateSeriesCircuit() {
 function renderCalculation() {
   calculationResult.innerHTML = "";
 
-  calculateSeriesCircuit().forEach((line) => {
+  const calculationLines = calculateParallelCircuit() || calculateSeriesCircuit();
+
+  calculationLines.forEach((line) => {
     const item = document.createElement("li");
     item.textContent = line;
     calculationResult.appendChild(item);
@@ -1041,6 +1190,7 @@ clearBtn.addEventListener("click", () => {
 });
 
 exampleBtn.addEventListener("click", loadExampleCircuit);
+parallelExampleBtn.addEventListener("click", loadParallelExampleCircuit);
 arrangeBtn.addEventListener("click", arrangeCanvas);
 
 // 应用左侧编辑栏中的数值修改
