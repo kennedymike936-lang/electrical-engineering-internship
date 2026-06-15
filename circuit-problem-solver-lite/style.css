@@ -491,6 +491,19 @@ body {
   font-size: 18px;
 }
 
+.summary-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: -30px 0 10px;
+}
+
+.ghost-button.small {
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
 .summary-panel p {
   margin: 0;
   color: #3f4b5b;
@@ -576,6 +589,15 @@ pre {
 
   .json-actions {
     flex-direction: column;
+  }
+
+  .summary-actions {
+    justify-content: stretch;
+    margin: 8px 0 10px;
+  }
+
+  .summary-actions .ghost-button {
+    flex: 1 1 0;
   }
 
   .circuit-canvas {

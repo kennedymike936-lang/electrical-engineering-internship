@@ -14,6 +14,9 @@
         <p>拼图式电路编辑器：拖拽元件、点击端点连线、保存 JSON 数据。</p>
       </div>
       <div class="topbar-actions">
+        <button id="undoBtn" class="ghost-button" type="button" disabled>撤销</button>
+        <button id="redoBtn" class="ghost-button" type="button" disabled>重做</button>
+        <button id="restoreSavedBtn" class="ghost-button" type="button">恢复上次画布</button>
         <button id="exampleBtn" class="ghost-button" type="button">生成示例电路</button>
         <button id="parallelExampleBtn" class="ghost-button" type="button">生成并联示例</button>
         <button id="mixedExampleBtn" class="ghost-button" type="button">生成混联示例</button>
@@ -129,6 +132,10 @@
       </div>
       <div class="summary-panel">
         <h2>直流电路计算</h2>
+        <div class="summary-actions calculation-actions">
+          <button id="copyCalculationBtn" class="ghost-button small" type="button">复制结果</button>
+          <button id="downloadCalculationBtn" class="ghost-button small" type="button">下载步骤</button>
+        </div>
         <ul id="calculationResult" class="analysis-list">
           <li>当前还没有可计算的直流电路。</li>
         </ul>

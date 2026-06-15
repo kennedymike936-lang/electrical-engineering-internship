@@ -33,6 +33,9 @@ const componentLayer = document.getElementById("componentLayer");
 const jsonOutput = document.getElementById("jsonOutput");
 const countText = document.getElementById("countText");
 const clearBtn = document.getElementById("clearBtn");
+const undoBtn = document.getElementById("undoBtn");
+const redoBtn = document.getElementById("redoBtn");
+const restoreSavedBtn = document.getElementById("restoreSavedBtn");
 const exampleBtn = document.getElementById("exampleBtn");
 const parallelExampleBtn = document.getElementById("parallelExampleBtn");
 const mixedExampleBtn = document.getElementById("mixedExampleBtn");
@@ -48,6 +51,8 @@ const deleteConnectionBtn = document.getElementById("deleteConnectionBtn");
 const cancelConnectionBtn = document.getElementById("cancelConnectionBtn");
 const copyJsonBtn = document.getElementById("copyJsonBtn");
 const downloadJsonBtn = document.getElementById("downloadJsonBtn");
+const copyCalculationBtn = document.getElementById("copyCalculationBtn");
+const downloadCalculationBtn = document.getElementById("downloadCalculationBtn");
 const importInput = document.getElementById("importInput");
 const importJsonBtn = document.getElementById("importJsonBtn");
 const statusText = document.getElementById("statusText");
@@ -67,6 +72,13 @@ let dragOffsetY = 0;
 let toolPreview = null;
 let currentToolPointerId = null;
 let toolDragCreated = false;
+let componentDragChanged = false;
+let wireDragChanged = false;
+let isApplyingHistory = false;
+const STORAGE_KEY = "circuit-problem-solver-lite-project";
+const MAX_HISTORY_LENGTH = 60;
+const undoStack = [];
+const redoStack = [];
 
 // 将普通坐标吸附到最近的网格点
 function snapToGrid(value) {
@@ -123,6 +135,120 @@ function getProjectData() {
     components,
     connections
   };
+}
+
+function cloneProjectData(data = getProjectData()) {
+  return JSON.parse(JSON.stringify(data));
+}
+
+function getProjectSnapshot(data = getProjectData()) {
+  return JSON.stringify(data);
+}
+
+function applyProjectData(data) {
+  components = cloneProjectData(data.components || []);
+  connections = cloneProjectData(data.connections || []);
+  clearSelection();
+  pendingTerminal = null;
+  rebuildCounters();
+}
+
+function updateHistoryButtons() {
+  undoBtn.disabled = undoStack.length <= 1;
+  redoBtn.disabled = redoStack.length === 0;
+}
+
+function recordHistory() {
+  if (isApplyingHistory) {
+    return;
+  }
+
+  const snapshot = getProjectSnapshot();
+  const latestSnapshot = undoStack[undoStack.length - 1];
+
+  if (snapshot === latestSnapshot) {
+    updateHistoryButtons();
+    return;
+  }
+
+  undoStack.push(snapshot);
+
+  if (undoStack.length > MAX_HISTORY_LENGTH) {
+    undoStack.shift();
+  }
+
+  redoStack.length = 0;
+  updateHistoryButtons();
+}
+
+function undoProjectChange() {
+  if (undoStack.length <= 1) {
+    return;
+  }
+
+  const currentSnapshot = undoStack.pop();
+  redoStack.push(currentSnapshot);
+  isApplyingHistory = true;
+  applyProjectData(JSON.parse(undoStack[undoStack.length - 1]));
+  isApplyingHistory = false;
+  setStatus("已撤销上一步操作。", "success");
+  render();
+  updateHistoryButtons();
+}
+
+function redoProjectChange() {
+  if (redoStack.length === 0) {
+    return;
+  }
+
+  const nextSnapshot = redoStack.pop();
+  undoStack.push(nextSnapshot);
+  isApplyingHistory = true;
+  applyProjectData(JSON.parse(nextSnapshot));
+  isApplyingHistory = false;
+  setStatus("已重做刚才撤销的操作。", "success");
+  render();
+  updateHistoryButtons();
+}
+
+function saveProjectToLocalStorage() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(getProjectData()));
+  } catch (error) {
+    setStatus("浏览器本地保存失败，可先下载 JSON 备份。", "error");
+  }
+}
+
+function restoreSavedProject(showStatus = true) {
+  const savedText = localStorage.getItem(STORAGE_KEY);
+
+  if (!savedText) {
+    if (showStatus) {
+      setStatus("还没有可恢复的本地画布。", "");
+    }
+    return false;
+  }
+
+  try {
+    const savedProject = JSON.parse(savedText);
+    const nextComponents = normalizeImportedComponents(savedProject.components || []);
+    const nextConnections = normalizeImportedConnections(savedProject.connections || [], nextComponents);
+
+    applyProjectData({ components: nextComponents, connections: nextConnections });
+    recordHistory();
+    render();
+
+    if (showStatus) {
+      setStatus("已恢复浏览器本地保存的画布。", "success");
+    }
+
+    return true;
+  } catch (error) {
+    if (showStatus) {
+      setStatus(`恢复失败：${error.message}`, "error");
+    }
+    return false;
+  }
 }
 
 // 端点字符串格式：R1.left / R1.right / N1.center
@@ -246,6 +372,7 @@ function addComponent(type, x, y) {
   });
 
   render();
+  recordHistory();
 }
 
 function loadExampleCircuit() {
@@ -265,6 +392,7 @@ function loadExampleCircuit() {
   rebuildCounters();
   setStatus("已生成示例电路。", "success");
   render();
+  recordHistory();
 }
 
 function loadParallelExampleCircuit() {
@@ -290,6 +418,7 @@ function loadParallelExampleCircuit() {
   rebuildCounters();
   setStatus("已生成并联示例电路。", "success");
   render();
+  recordHistory();
 }
 
 function loadMixedExampleCircuit() {
@@ -317,6 +446,7 @@ function loadMixedExampleCircuit() {
   rebuildCounters();
   setStatus("已生成混联示例电路。", "success");
   render();
+  recordHistory();
 }
 
 function arrangeCanvas() {
@@ -344,6 +474,7 @@ function arrangeCanvas() {
   pendingTerminal = null;
   setStatus("已按网格整理画布，并恢复导线为自动折线。", "success");
   render();
+  recordHistory();
 }
 
 function clearSelection() {
@@ -366,6 +497,7 @@ function deleteSelectedComponent() {
   pendingTerminal = null;
   setStatus("已删除选中的元件和相关连线。", "success");
   render();
+  recordHistory();
 }
 
 function deleteSelectedConnection() {
@@ -378,6 +510,7 @@ function deleteSelectedConnection() {
   selectedConnectionIndex = null;
   setStatus(`已删除导线 ${removed.from} 到 ${removed.to}。`, "success");
   render();
+  recordHistory();
 }
 
 function selectConnection(index) {
@@ -461,6 +594,7 @@ function renderComponents() {
 
       event.stopPropagation();
       draggedComponentId = component.id;
+      componentDragChanged = false;
       selectedComponentId = component.id;
       selectedConnectionIndex = null;
       dragOffsetX = event.offsetX;
@@ -520,6 +654,7 @@ function renderConnections() {
           event.preventDefault();
           event.stopPropagation();
           draggedWireIndex = index;
+          wireDragChanged = false;
           selectedConnectionIndex = index;
           handle.setPointerCapture(event.pointerId);
           setStatus("正在整理导线路径。", "success");
@@ -578,6 +713,9 @@ function handleTerminalClick(componentId, side) {
 
   pendingTerminal = null;
   render();
+  if (!exists) {
+    recordHistory();
+  }
 }
 
 // 渲染底部 JSON 数据
@@ -1032,13 +1170,30 @@ function calculateSeriesCircuit() {
 function renderCalculation() {
   calculationResult.innerHTML = "";
 
-  const calculationLines = calculateMixedCircuit() || calculateParallelCircuit() || calculateSeriesCircuit();
+  const calculationLines = getCalculationLines();
 
   calculationLines.forEach((line) => {
     const item = document.createElement("li");
     item.textContent = line;
     calculationResult.appendChild(item);
   });
+}
+
+// 统一生成当前可识别电路的解题步骤，供页面显示、复制和下载复用
+function getCalculationLines() {
+  return calculateMixedCircuit() || calculateParallelCircuit() || calculateSeriesCircuit();
+}
+
+function getCalculationText() {
+  const lines = getCalculationLines();
+  const createdAt = new Date().toLocaleString("zh-CN");
+
+  return [
+    "Circuit Problem Solver Lite - 直流电路解题步骤",
+    `生成时间：${createdAt}`,
+    "",
+    ...lines
+  ].join("\n");
 }
 
 function analyzeCircuit() {
@@ -1166,6 +1321,8 @@ function render() {
   renderAnalysis();
   renderCalculation();
   updateEditor();
+  updateHistoryButtons();
+  saveProjectToLocalStorage();
 }
 
 // 创建工具栏拖拽预览，让拖拽过程更直观
@@ -1266,13 +1423,17 @@ document.addEventListener("pointermove", (event) => {
       const maxY = Math.max(from.y, to.y) + GRID_SIZE * 3;
       const nextBendY = snapToGrid(event.clientY - rect.top);
 
-      connection.bendY = Math.min(Math.max(nextBendY, minY), maxY);
+      const clampedBendY = Math.min(Math.max(nextBendY, minY), maxY);
+      wireDragChanged = wireDragChanged || connection.bendY !== clampedBendY;
+      connection.bendY = clampedBendY;
     } else {
       const minX = Math.min(from.x, to.x) - GRID_SIZE * 3;
       const maxX = Math.max(from.x, to.x) + GRID_SIZE * 3;
       const nextBendX = snapToGrid(event.clientX - rect.left);
 
-      connection.bendX = Math.min(Math.max(nextBendX, minX), maxX);
+      const clampedBendX = Math.min(Math.max(nextBendX, minX), maxX);
+      wireDragChanged = wireDragChanged || connection.bendX !== clampedBendX;
+      connection.bendX = clampedBendX;
     }
 
     render();
@@ -1296,6 +1457,7 @@ document.addEventListener("pointermove", (event) => {
     component.type
   );
 
+  componentDragChanged = componentDragChanged || component.x !== position.x || component.y !== position.y;
   component.x = position.x;
   component.y = position.y;
   render();
@@ -1317,12 +1479,18 @@ document.addEventListener("pointerup", (event) => {
     }
   }
 
+  if (componentDragChanged || wireDragChanged) {
+    recordHistory();
+  }
+
   toolPreview = null;
   draggedToolType = null;
   currentToolPointerId = null;
   toolDragCreated = false;
   draggedComponentId = null;
   draggedWireIndex = null;
+  componentDragChanged = false;
+  wireDragChanged = false;
   canvas.classList.remove("drag-over");
 });
 
@@ -1341,6 +1509,13 @@ clearBtn.addEventListener("click", () => {
   rebuildCounters();
   setStatus("画布已清空。", "success");
   render();
+  recordHistory();
+});
+
+undoBtn.addEventListener("click", undoProjectChange);
+redoBtn.addEventListener("click", redoProjectChange);
+restoreSavedBtn.addEventListener("click", () => {
+  restoreSavedProject(true);
 });
 
 exampleBtn.addEventListener("click", loadExampleCircuit);
@@ -1359,6 +1534,7 @@ applyValueBtn.addEventListener("click", () => {
   component.value = valueInput.value.trim() || component.value;
   setStatus(`已修改 ${component.id} 的数值。`, "success");
   render();
+  recordHistory();
 });
 
 // 删除按钮
@@ -1374,9 +1550,18 @@ cancelConnectionBtn.addEventListener("click", () => {
 
 // Delete 键删除当前选中元件
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Delete" && selectedComponentId) {
+  const key = event.key.toLowerCase();
+  const isEditingText = ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName);
+
+  if ((event.ctrlKey || event.metaKey) && key === "z" && !isEditingText) {
+    event.preventDefault();
+    undoProjectChange();
+  } else if ((event.ctrlKey || event.metaKey) && key === "y" && !isEditingText) {
+    event.preventDefault();
+    redoProjectChange();
+  } else if (event.key === "Delete" && selectedComponentId && !isEditingText) {
     deleteSelectedComponent();
-  } else if (event.key === "Delete" && selectedConnectionIndex !== null) {
+  } else if (event.key === "Delete" && selectedConnectionIndex !== null && !isEditingText) {
     deleteSelectedConnection();
   }
 });
@@ -1401,6 +1586,25 @@ downloadJsonBtn.addEventListener("click", () => {
 });
 
 // 检查导入的 components 数据是否符合格式
+// 复制当前直流电路计算步骤，方便粘贴到报告或作业里
+copyCalculationBtn.addEventListener("click", async () => {
+  await navigator.clipboard.writeText(getCalculationText());
+  setStatus("计算结果已复制到剪贴板。", "success");
+});
+
+// 下载当前直流电路计算步骤，保存为 txt 文本文件
+downloadCalculationBtn.addEventListener("click", () => {
+  const blob = new Blob([getCalculationText()], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = "circuit-solution.txt";
+  link.click();
+  URL.revokeObjectURL(url);
+  setStatus("解题步骤文本已开始下载。", "success");
+});
+
 function normalizeImportedComponents(data) {
   if (!Array.isArray(data)) {
     throw new Error("components 必须是数组。");
@@ -1485,9 +1689,12 @@ importJsonBtn.addEventListener("click", () => {
     rebuildCounters();
     setStatus("JSON 导入成功，画布已恢复。", "success");
     render();
+    recordHistory();
   } catch (error) {
     setStatus(`导入失败：${error.message}`, "error");
   }
 });
 
+restoreSavedProject(false);
 render();
+recordHistory();
