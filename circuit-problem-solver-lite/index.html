@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Circuit Problem Solver Lite V3</title>
+  <title>Circuit Problem Solver Lite V6</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
     <header class="topbar">
       <div>
-        <h1>Circuit Problem Solver Lite V3</h1>
+        <h1>Circuit Problem Solver Lite V6</h1>
         <p>拼图式电路编辑器：拖拽元件、点击端点连线、保存 JSON 数据。</p>
       </div>
       <div class="topbar-actions">
@@ -31,7 +31,9 @@
 
         <!-- 工具栏元件：拖拽到右侧画布即可创建对应元件 -->
         <button class="tool-item source-tool" type="button" data-type="source">
-          <span class="tool-symbol">V</span>
+          <span class="tool-symbol">
+            <span class="symbol-preview symbol-preview-source"></span>
+          </span>
           <span>
             <strong>直流电源</strong>
             <small>默认 12V</small>
@@ -39,7 +41,9 @@
         </button>
 
         <button class="tool-item resistor-tool" type="button" data-type="resistor">
-          <span class="tool-symbol">R</span>
+          <span class="tool-symbol">
+            <span class="symbol-preview symbol-preview-resistor"></span>
+          </span>
           <span>
             <strong>电阻</strong>
             <small>默认 10Ω</small>
@@ -47,7 +51,9 @@
         </button>
 
         <button class="tool-item capacitor-tool" type="button" data-type="capacitor">
-          <span class="tool-symbol">C</span>
+          <span class="tool-symbol">
+            <span class="symbol-preview symbol-preview-capacitor"></span>
+          </span>
           <span>
             <strong>电容</strong>
             <small>默认 100uF</small>
@@ -55,7 +61,9 @@
         </button>
 
         <button class="tool-item inductor-tool" type="button" data-type="inductor">
-          <span class="tool-symbol">L</span>
+          <span class="tool-symbol">
+            <span class="symbol-preview symbol-preview-inductor"></span>
+          </span>
           <span>
             <strong>电感</strong>
             <small>默认 10mH</small>
@@ -76,6 +84,8 @@
           <label for="valueInput">元件数值</label>
           <input id="valueInput" type="text" placeholder="点击画布元件后修改" disabled>
           <button id="applyValueBtn" class="apply-button" type="button" disabled>应用修改</button>
+          <button id="rotateBtn" class="ghost-button full" type="button" disabled>旋转 90°</button>
+          <button id="duplicateBtn" class="ghost-button full" type="button" disabled>复制元件</button>
           <button id="deleteBtn" class="ghost-button danger full" type="button" disabled>删除元件</button>
           <div class="connection-list">
             <strong>相关连接</strong>
@@ -98,13 +108,23 @@
       <section class="canvas-area">
         <div class="canvas-title">
           <h2>网格画布</h2>
-          <p>拖拽元件到画布；点击端点建立连接。暂不做自动计算。</p>
+          <div class="canvas-tools" aria-label="画布视图工具">
+            <button id="zoomOutBtn" class="ghost-button small" type="button">缩小</button>
+            <button id="zoomResetBtn" class="ghost-button small" type="button">100%</button>
+            <button id="zoomInBtn" class="ghost-button small" type="button">放大</button>
+            <button id="fitViewBtn" class="ghost-button small" type="button">适应视图</button>
+            <button id="panModeBtn" class="ghost-button small" type="button">移动画布</button>
+            <button id="downloadSvgBtn" class="ghost-button small" type="button">导出 SVG</button>
+          </div>
+          <p>拖拽元件到画布；点击端点建立连接；缩放后仍可继续编辑。</p>
         </div>
 
         <!-- 画布区域：SVG 用于画线，元件由 JavaScript 渲染 -->
         <div id="canvas" class="circuit-canvas" aria-label="电路编辑画布">
-          <svg id="wireLayer" class="wire-layer" aria-hidden="true"></svg>
-          <div id="componentLayer" class="component-layer"></div>
+          <div id="canvasViewport" class="canvas-viewport">
+            <svg id="wireLayer" class="wire-layer" aria-hidden="true"></svg>
+            <div id="componentLayer" class="component-layer"></div>
+          </div>
         </div>
       </section>
     </section>

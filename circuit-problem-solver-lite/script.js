@@ -17,6 +17,8 @@ const counters = {
 const GRID_SIZE = 24;
 const DEFAULT_COMPONENT_WIDTH = 116;
 const DEFAULT_COMPONENT_HEIGHT = 58;
+const CANVAS_WORLD_WIDTH = 2200;
+const CANVAS_WORLD_HEIGHT = 1400;
 
 // 不同元件的默认显示信息
 const componentConfig = {
@@ -28,6 +30,7 @@ const componentConfig = {
 };
 
 const canvas = document.getElementById("canvas");
+const canvasViewport = document.getElementById("canvasViewport");
 const wireLayer = document.getElementById("wireLayer");
 const componentLayer = document.getElementById("componentLayer");
 const jsonOutput = document.getElementById("jsonOutput");
@@ -40,9 +43,17 @@ const exampleBtn = document.getElementById("exampleBtn");
 const parallelExampleBtn = document.getElementById("parallelExampleBtn");
 const mixedExampleBtn = document.getElementById("mixedExampleBtn");
 const arrangeBtn = document.getElementById("arrangeBtn");
+const zoomOutBtn = document.getElementById("zoomOutBtn");
+const zoomResetBtn = document.getElementById("zoomResetBtn");
+const zoomInBtn = document.getElementById("zoomInBtn");
+const fitViewBtn = document.getElementById("fitViewBtn");
+const panModeBtn = document.getElementById("panModeBtn");
+const downloadSvgBtn = document.getElementById("downloadSvgBtn");
 const selectedName = document.getElementById("selectedName");
 const valueInput = document.getElementById("valueInput");
 const applyValueBtn = document.getElementById("applyValueBtn");
+const rotateBtn = document.getElementById("rotateBtn");
+const duplicateBtn = document.getElementById("duplicateBtn");
 const deleteBtn = document.getElementById("deleteBtn");
 const componentConnectionList = document.getElementById("componentConnectionList");
 const connectionHint = document.getElementById("connectionHint");
@@ -75,6 +86,16 @@ let toolDragCreated = false;
 let componentDragChanged = false;
 let wireDragChanged = false;
 let isApplyingHistory = false;
+let canvasScale = 1;
+let canvasOffsetX = 0;
+let canvasOffsetY = 0;
+let isPanMode = false;
+let isPanningCanvas = false;
+let suppressNextCanvasClick = false;
+let panStartX = 0;
+let panStartY = 0;
+let panStartOffsetX = 0;
+let panStartOffsetY = 0;
 const STORAGE_KEY = "circuit-problem-solver-lite-project";
 const MAX_HISTORY_LENGTH = 60;
 const undoStack = [];
@@ -97,13 +118,266 @@ function getComponentSize(type) {
 
 function clampPosition(x, y, type = "resistor") {
   const size = getComponentSize(type);
-  const maxX = Math.max(0, canvas.clientWidth - size.width - 20);
-  const maxY = Math.max(0, canvas.clientHeight - size.height - 20);
+  const maxX = Math.max(0, CANVAS_WORLD_WIDTH - size.width - 20);
+  const maxY = Math.max(0, CANVAS_WORLD_HEIGHT - size.height - 20);
 
   return {
     x: Math.min(Math.max(0, snapToGrid(x)), snapToGrid(maxX)),
     y: Math.min(Math.max(0, snapToGrid(y)), snapToGrid(maxY))
   };
+}
+
+function getWorldPoint(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+
+  return {
+    x: (clientX - rect.left - canvasOffsetX) / canvasScale,
+    y: (clientY - rect.top - canvasOffsetY) / canvasScale
+  };
+}
+
+function updateCanvasView() {
+  canvasViewport.style.transform = `translate(${canvasOffsetX}px, ${canvasOffsetY}px) scale(${canvasScale})`;
+  canvas.style.backgroundSize = `${GRID_SIZE * canvasScale}px ${GRID_SIZE * canvasScale}px`;
+  canvas.style.backgroundPosition = `${canvasOffsetX}px ${canvasOffsetY}px`;
+  panModeBtn.classList.toggle("active", isPanMode);
+  zoomResetBtn.textContent = `${Math.round(canvasScale * 100)}%`;
+}
+
+function setCanvasScale(nextScale) {
+  const clampedScale = Math.min(Math.max(nextScale, 0.5), 1.8);
+  const rect = canvas.getBoundingClientRect();
+  const centerX = rect.width / 2;
+  const centerY = rect.height / 2;
+  const worldCenterX = (centerX - canvasOffsetX) / canvasScale;
+  const worldCenterY = (centerY - canvasOffsetY) / canvasScale;
+
+  canvasScale = clampedScale;
+  canvasOffsetX = centerX - worldCenterX * canvasScale;
+  canvasOffsetY = centerY - worldCenterY * canvasScale;
+  updateCanvasView();
+}
+
+function resetCanvasView() {
+  canvasScale = 1;
+  canvasOffsetX = 0;
+  canvasOffsetY = 0;
+  updateCanvasView();
+  setStatus("画布视图已恢复到 100%。", "success");
+}
+
+function fitCanvasView(showStatus = true) {
+  if (components.length === 0) {
+    resetCanvasView();
+    return;
+  }
+
+  const bounds = getCircuitBounds();
+  const padding = 64;
+  const availableWidth = Math.max(1, canvas.clientWidth - padding * 2);
+  const availableHeight = Math.max(1, canvas.clientHeight - padding * 2);
+  const nextScale = Math.min(1.4, Math.max(0.5, Math.min(availableWidth / bounds.width, availableHeight / bounds.height)));
+
+  canvasScale = nextScale;
+  canvasOffsetX = padding - bounds.minX * canvasScale + Math.max(0, (availableWidth - bounds.width * canvasScale) / 2);
+  canvasOffsetY = padding - bounds.minY * canvasScale + Math.max(0, (availableHeight - bounds.height * canvasScale) / 2);
+  updateCanvasView();
+
+  if (showStatus) {
+    setStatus("已将当前电路适配到画布中。", "success");
+  }
+}
+
+function getCircuitBounds() {
+  if (components.length === 0) {
+    return { minX: 0, minY: 0, maxX: canvas.clientWidth, maxY: canvas.clientHeight, width: canvas.clientWidth, height: canvas.clientHeight };
+  }
+
+  const bounds = components.reduce((result, component) => {
+    const size = getComponentSize(component.type);
+
+    return {
+      minX: Math.min(result.minX, component.x),
+      minY: Math.min(result.minY, component.y),
+      maxX: Math.max(result.maxX, component.x + size.width),
+      maxY: Math.max(result.maxY, component.y + size.height)
+    };
+  }, { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+
+  connections.forEach((connection) => {
+    const from = getWireAnchorPosition(connection.from);
+    const to = getWireAnchorPosition(connection.to);
+
+    [from, to].forEach((point) => {
+      if (!point) {
+        return;
+      }
+
+      bounds.minX = Math.min(bounds.minX, point.x);
+      bounds.minY = Math.min(bounds.minY, point.y);
+      bounds.maxX = Math.max(bounds.maxX, point.x);
+      bounds.maxY = Math.max(bounds.maxY, point.y);
+    });
+  });
+
+  bounds.width = Math.max(1, bounds.maxX - bounds.minX);
+  bounds.height = Math.max(1, bounds.maxY - bounds.minY);
+  return bounds;
+}
+
+function getComponentRotation(component) {
+  return Number(component.rotation) || 0;
+}
+
+function rotatePointAroundCenter(x, y, width, height, rotation) {
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const dx = x - centerX;
+  const dy = y - centerY;
+
+  if (rotation === 90) {
+    return { x: centerX - dy, y: centerY + dx };
+  }
+
+  if (rotation === 180) {
+    return { x: centerX - dx, y: centerY - dy };
+  }
+
+  if (rotation === 270) {
+    return { x: centerX + dy, y: centerY - dx };
+  }
+
+  return { x, y };
+}
+
+function escapeSvgText(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function getComponentSvg(component, offsetX, offsetY) {
+  const size = getComponentSize(component.type);
+  const x = component.x - offsetX;
+  const y = component.y - offsetY;
+  const rotation = getComponentRotation(component);
+  const centerX = x + size.width / 2;
+  const centerY = y + size.height / 2;
+
+  if (component.type === "node") {
+    return [
+      `<circle cx="${x + size.width / 2}" cy="${y + size.height / 2}" r="7" fill="#66717f" />`,
+      `<text x="${x + size.width / 2}" y="${y + size.height + 14}" text-anchor="middle" font-size="12" fill="#5f6b7a">${escapeSvgText(component.id)}</text>`
+    ].join("\n");
+  }
+
+  return [
+    `<g transform="rotate(${rotation} ${centerX} ${centerY})">`,
+    `  <rect x="${x}" y="${y}" width="${size.width}" height="${size.height}" rx="8" fill="#f8fafc" stroke="#334155" stroke-width="2" />`,
+    `  <circle cx="${x}" cy="${y + size.height / 2}" r="7" fill="#eef2f6" stroke="#27313f" stroke-width="2" />`,
+    `  <circle cx="${x + size.width}" cy="${y + size.height / 2}" r="7" fill="#eef2f6" stroke="#27313f" stroke-width="2" />`,
+    getSchematicSvgMarkup(component.type, x, y),
+    `  <text x="${x + 12}" y="${y + 50}" font-size="15" font-weight="700" fill="#27313f">${escapeSvgText(component.id)}</text>`,
+    `  <text x="${x + size.width - 12}" y="${y + 50}" text-anchor="end" font-size="14" fill="#5f6b7a">${escapeSvgText(component.value)}</text>`,
+    `</g>`
+  ].join("\n");
+}
+
+function getSchematicSvgMarkup(type, x, y) {
+  const leadY = y + 26;
+
+  if (type === "source") {
+    return [
+      `  <line x1="${x + 16}" y1="${leadY}" x2="${x + 48}" y2="${leadY}" stroke="#27313f" stroke-width="2" />`,
+      `  <line x1="${x + 68}" y1="${leadY}" x2="${x + 100}" y2="${leadY}" stroke="#27313f" stroke-width="2" />`,
+      `  <circle cx="${x + 58}" cy="${leadY}" r="14" fill="#f8fafc" stroke="#27313f" stroke-width="2" />`
+    ].join("\n");
+  }
+
+  if (type === "resistor") {
+    return [
+      `  <polyline points="${x + 16},${leadY} ${x + 34},${leadY} ${x + 40},${y + 16} ${x + 48},${y + 36} ${x + 56},${y + 16} ${x + 64},${y + 36} ${x + 72},${y + 16} ${x + 80},${y + 36} ${x + 86},${leadY} ${x + 100},${leadY}" fill="none" stroke="#27313f" stroke-width="2" stroke-linejoin="miter" />`
+    ].join("\n");
+  }
+
+  if (type === "capacitor") {
+    return [
+      `  <line x1="${x + 16}" y1="${leadY}" x2="${x + 50}" y2="${leadY}" stroke="#27313f" stroke-width="2" />`,
+      `  <line x1="${x + 66}" y1="${leadY}" x2="${x + 100}" y2="${leadY}" stroke="#27313f" stroke-width="2" />`,
+      `  <line x1="${x + 52}" y1="${y + 16}" x2="${x + 52}" y2="${y + 36}" stroke="#27313f" stroke-width="3" />`,
+      `  <line x1="${x + 64}" y1="${y + 16}" x2="${x + 64}" y2="${y + 36}" stroke="#27313f" stroke-width="3" />`
+    ].join("\n");
+  }
+
+  if (type === "inductor") {
+    return [
+      `  <line x1="${x + 16}" y1="${leadY}" x2="${x + 36}" y2="${leadY}" stroke="#27313f" stroke-width="2" />`,
+      `  <path d="M ${x + 36} ${leadY} a 8 8 0 0 1 16 0 a 8 8 0 0 1 16 0 a 8 8 0 0 1 16 0" fill="none" stroke="#27313f" stroke-width="2" />`,
+      `  <line x1="${x + 84}" y1="${leadY}" x2="${x + 100}" y2="${leadY}" stroke="#27313f" stroke-width="2" />`
+    ].join("\n");
+  }
+
+  return "";
+}
+
+function buildCircuitSvg() {
+  const bounds = getCircuitBounds();
+  const padding = 48;
+  const minX = Math.max(0, bounds.minX - padding);
+  const minY = Math.max(0, bounds.minY - padding);
+  const width = Math.max(360, bounds.width + padding * 2);
+  const height = Math.max(240, bounds.height + padding * 2);
+  const wireMarkup = connections.map((connection) => {
+    const from = getWireAnchorPosition(connection.from);
+    const to = getWireAnchorPosition(connection.to);
+
+    if (!from || !to) {
+      return "";
+    }
+
+    const shiftedPoints = getWirePolylinePoints(connection)
+      .split(" ")
+      .map((point) => {
+        const [x, y] = point.split(",").map(Number);
+        return `${x - minX},${y - minY}`;
+      })
+      .join(" ");
+
+    return `<polyline points="${shiftedPoints}" fill="none" stroke="#4b5563" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter" />`;
+  }).join("\n");
+  const componentMarkup = components.map((component) => getComponentSvg(component, minX, minY)).join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <rect width="100%" height="100%" fill="#eef2f6" />
+  <defs>
+    <pattern id="grid" width="${GRID_SIZE}" height="${GRID_SIZE}" patternUnits="userSpaceOnUse">
+      <path d="M ${GRID_SIZE} 0 L 0 0 0 ${GRID_SIZE}" fill="none" stroke="#d4dbe5" stroke-width="1" />
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#grid)" />
+  ${wireMarkup}
+  ${componentMarkup}
+</svg>`;
+}
+
+function downloadSvg() {
+  if (components.length === 0) {
+    setStatus("画布中还没有元件，暂时没有可导出的电路图。", "");
+    return;
+  }
+
+  const blob = new Blob([buildCircuitSvg()], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = "circuit-diagram.svg";
+  link.click();
+  URL.revokeObjectURL(url);
+  setStatus("SVG 电路图已开始下载。", "success");
 }
 
 // 根据元件类型生成唯一 id，例如 R1、R2、C1
@@ -318,10 +592,158 @@ function getTerminalPosition(key) {
     };
   }
 
+  const localPoint = side === "left"
+    ? { x: 0, y: size.height / 2 }
+    : { x: size.width, y: size.height / 2 };
+  const rotatedPoint = rotatePointAroundCenter(localPoint.x, localPoint.y, size.width, size.height, getComponentRotation(component));
+
   return {
-    x: component.x + (side === "left" ? 0 : size.width),
-    y: component.y + size.height / 2
+    x: component.x + rotatedPoint.x,
+    y: component.y + rotatedPoint.y
   };
+}
+
+function getWireAnchorPosition(key) {
+  const terminalPosition = getTerminalPosition(key);
+  const { componentId, side } = parseTerminalKey(key);
+  const component = components.find((item) => item.id === componentId);
+
+  if (!terminalPosition || !component) {
+    return terminalPosition;
+  }
+
+  if (side === "center") {
+    return terminalPosition;
+  }
+
+  const rotation = getComponentRotation(component);
+  const direction = side === "left" ? -1 : 1;
+  const offset = 14;
+
+  if (rotation === 90) {
+    return { x: terminalPosition.x, y: terminalPosition.y + direction * offset };
+  }
+
+  if (rotation === 180) {
+    return { x: terminalPosition.x - direction * offset, y: terminalPosition.y };
+  }
+
+  if (rotation === 270) {
+    return { x: terminalPosition.x, y: terminalPosition.y - direction * offset };
+  }
+
+  return { x: terminalPosition.x + direction * offset, y: terminalPosition.y };
+}
+
+function getWirePolylinePoints(connection) {
+  const fromTerminal = getTerminalPosition(connection.from);
+  const toTerminal = getTerminalPosition(connection.to);
+  const fromAnchor = getWireAnchorPosition(connection.from);
+  const toAnchor = getWireAnchorPosition(connection.to);
+
+  if (!fromTerminal || !toTerminal || !fromAnchor || !toAnchor) {
+    return "";
+  }
+
+  const middlePoints = getOrthogonalWirePoints(fromAnchor, toAnchor, connection)
+    .split(" ")
+    .map((point) => {
+      const [x, y] = point.split(",").map(Number);
+      return { x, y };
+    });
+  const allPoints = [fromTerminal, ...middlePoints, toTerminal];
+  const compactPoints = allPoints.filter((point, index, list) => {
+    const previous = list[index - 1];
+    return !previous || previous.x !== point.x || previous.y !== point.y;
+  });
+
+  return compactPoints.map((point) => `${point.x},${point.y}`).join(" ");
+}
+
+function rotateSelectedComponent() {
+  const component = components.find((item) => item.id === selectedComponentId);
+
+  if (!component || component.type === "node") {
+    return;
+  }
+
+  component.rotation = (getComponentRotation(component) + 90) % 360;
+  setStatus(`已将 ${component.id} 旋转到 ${component.rotation}°。`, "success");
+  render();
+  recordHistory();
+}
+
+function duplicateSelectedComponent() {
+  const component = components.find((item) => item.id === selectedComponentId);
+
+  if (!component) {
+    return;
+  }
+
+  const position = clampPosition(component.x + GRID_SIZE * 2, component.y + GRID_SIZE * 2, component.type);
+  const nextComponent = {
+    id: createComponentId(component.type),
+    type: component.type,
+    value: component.value,
+    rotation: getComponentRotation(component),
+    x: position.x,
+    y: position.y
+  };
+
+  components.push(nextComponent);
+  selectedComponentId = nextComponent.id;
+  selectedConnectionIndex = null;
+  pendingTerminal = null;
+  setStatus(`已复制 ${component.id} 为 ${nextComponent.id}。`, "success");
+  render();
+  recordHistory();
+}
+
+function getSchematicMarkup(type) {
+  if (type === "source") {
+    return `
+      <span class="schematic-body schematic-source">
+        <span class="schematic-lead left"></span>
+        <span class="source-circle"></span>
+        <span class="schematic-lead right"></span>
+      </span>
+    `;
+  }
+
+  if (type === "resistor") {
+    return `
+      <span class="schematic-body schematic-resistor">
+        <span class="schematic-lead left"></span>
+        <span class="zigzag"></span>
+        <span class="schematic-lead right"></span>
+      </span>
+    `;
+  }
+
+  if (type === "capacitor") {
+    return `
+      <span class="schematic-body schematic-capacitor">
+        <span class="schematic-lead left"></span>
+        <span class="plate left"></span>
+        <span class="plate right"></span>
+        <span class="schematic-lead right"></span>
+      </span>
+    `;
+  }
+
+  if (type === "inductor") {
+    return `
+      <span class="schematic-body schematic-inductor">
+        <span class="schematic-lead left"></span>
+        <span class="coil one"></span>
+        <span class="coil two"></span>
+        <span class="coil three"></span>
+        <span class="schematic-lead right"></span>
+      </span>
+    `;
+  }
+
+  return "";
 }
 
 // 生成直角折线坐标，让导线更接近电路图中的横平竖直画法。
@@ -332,11 +754,11 @@ function getOrthogonalWirePoints(from, to, connection = {}) {
   const midX = hasBendX ? connection.bendX : from.x + (to.x - from.x) / 2;
   const midY = hasBendY ? connection.bendY : from.y + (to.y - from.y) / 2;
 
-  if (from.y === to.y && hasBendY) {
+  if (hasBendY) {
     return `${from.x},${from.y} ${from.x},${midY} ${to.x},${midY} ${to.x},${to.y}`;
   }
 
-  if (from.x === to.x && hasBendX) {
+  if (hasBendX) {
     return `${from.x},${from.y} ${midX},${from.y} ${midX},${to.y} ${to.x},${to.y}`;
   }
 
@@ -367,6 +789,7 @@ function addComponent(type, x, y) {
     id: createComponentId(type),
     type,
     value: config.value,
+    rotation: 0,
     x: position.x,
     y: position.y
   });
@@ -377,9 +800,9 @@ function addComponent(type, x, y) {
 
 function loadExampleCircuit() {
   components = [
-    { id: "V1", type: "source", value: "12V", x: 72, y: 120 },
-    { id: "R1", type: "resistor", value: "10Ω", x: 288, y: 120 },
-    { id: "N1", type: "node", value: "node", x: 504, y: 144 }
+    { id: "V1", type: "source", value: "12V", rotation: 0, x: 96, y: 168 },
+    { id: "R1", type: "resistor", value: "10Ω", rotation: 0, x: 312, y: 168 },
+    { id: "N1", type: "node", value: "node", rotation: 0, x: 528, y: 192 }
   ];
 
   connections = [
@@ -390,18 +813,19 @@ function loadExampleCircuit() {
   clearSelection();
   pendingTerminal = null;
   rebuildCounters();
-  setStatus("已生成示例电路。", "success");
   render();
   recordHistory();
+  fitCanvasView(false);
+  setStatus("已生成示例电路，并自动适配到画布中。", "success");
 }
 
 function loadParallelExampleCircuit() {
   components = [
-    { id: "V1", type: "source", value: "12V", x: 72, y: 168 },
-    { id: "N1", type: "node", value: "node", x: 240, y: 96 },
-    { id: "N2", type: "node", value: "node", x: 240, y: 264 },
-    { id: "R1", type: "resistor", value: "6Ω", x: 384, y: 72 },
-    { id: "R2", type: "resistor", value: "12Ω", x: 384, y: 216 }
+    { id: "V1", type: "source", value: "12V", rotation: 0, x: 96, y: 216 },
+    { id: "N1", type: "node", value: "node", rotation: 0, x: 312, y: 120 },
+    { id: "N2", type: "node", value: "node", rotation: 0, x: 312, y: 336 },
+    { id: "R1", type: "resistor", value: "6Ω", rotation: 0, x: 552, y: 96 },
+    { id: "R2", type: "resistor", value: "12Ω", rotation: 0, x: 552, y: 288 }
   ];
 
   connections = [
@@ -416,25 +840,26 @@ function loadParallelExampleCircuit() {
   clearSelection();
   pendingTerminal = null;
   rebuildCounters();
-  setStatus("已生成并联示例电路。", "success");
   render();
   recordHistory();
+  fitCanvasView(false);
+  setStatus("已生成并联示例电路，并自动适配到画布中。", "success");
 }
 
 function loadMixedExampleCircuit() {
   components = [
-    { id: "V1", type: "source", value: "12V", x: 72, y: 168 },
-    { id: "R1", type: "resistor", value: "4Ω", x: 240, y: 168 },
-    { id: "N1", type: "node", value: "node", x: 432, y: 168 },
-    { id: "N2", type: "node", value: "node", x: 432, y: 336 },
-    { id: "R2", type: "resistor", value: "6Ω", x: 576, y: 120 },
-    { id: "R3", type: "resistor", value: "12Ω", x: 576, y: 264 }
+    { id: "V1", type: "source", value: "12V", rotation: 0, x: 96, y: 264 },
+    { id: "R1", type: "resistor", value: "4Ω", rotation: 0, x: 312, y: 264 },
+    { id: "N1", type: "node", value: "node", rotation: 0, x: 552, y: 288 },
+    { id: "R2", type: "resistor", value: "6Ω", rotation: 0, x: 720, y: 192 },
+    { id: "R3", type: "resistor", value: "12Ω", rotation: 0, x: 720, y: 360 },
+    { id: "N2", type: "node", value: "node", rotation: 0, x: 936, y: 288 }
   ];
 
   connections = [
     { from: "V1.right", to: "R1.left" },
     { from: "R1.right", to: "N1.center" },
-    { from: "V1.left", to: "N2.center" },
+    { from: "V1.left", to: "N2.center", bendY: 504 },
     { from: "N1.center", to: "R2.left" },
     { from: "R2.right", to: "N2.center" },
     { from: "N1.center", to: "R3.left" },
@@ -444,9 +869,10 @@ function loadMixedExampleCircuit() {
   clearSelection();
   pendingTerminal = null;
   rebuildCounters();
-  setStatus("已生成混联示例电路。", "success");
   render();
   recordHistory();
+  fitCanvasView(false);
+  setStatus("已生成混联示例电路，并自动适配到画布中。", "success");
 }
 
 function arrangeCanvas() {
@@ -541,6 +967,7 @@ function renderComponents() {
     element.style.top = `${component.y}px`;
     element.style.width = `${getComponentSize(component.type).width}px`;
     element.style.height = `${getComponentSize(component.type).height}px`;
+    element.style.transform = component.type === "node" ? "" : `rotate(${getComponentRotation(component)}deg)`;
 
     if (component.id === selectedComponentId) {
       element.classList.add("selected");
@@ -555,7 +982,7 @@ function renderComponents() {
       element.innerHTML = `
         <span class="terminal left" data-side="left" title="${component.id}.left">${config.terminals.left}</span>
         <span class="terminal right" data-side="right" title="${component.id}.right">${config.terminals.right}</span>
-        <span class="component-symbol">${config.symbol}</span>
+        ${getSchematicMarkup(component.type)}
         <span class="component-name">${component.id}</span>
         <span class="component-value">${component.value}</span>
       `;
@@ -597,8 +1024,9 @@ function renderComponents() {
       componentDragChanged = false;
       selectedComponentId = component.id;
       selectedConnectionIndex = null;
-      dragOffsetX = event.offsetX;
-      dragOffsetY = event.offsetY;
+      const worldPoint = getWorldPoint(event.clientX, event.clientY);
+      dragOffsetX = worldPoint.x - component.x;
+      dragOffsetY = worldPoint.y - component.y;
       element.setPointerCapture(event.pointerId);
       render();
     });
@@ -612,8 +1040,8 @@ function renderConnections() {
   wireLayer.innerHTML = "";
 
   connections.forEach((connection, index) => {
-    const from = getTerminalPosition(connection.from);
-    const to = getTerminalPosition(connection.to);
+    const from = getWireAnchorPosition(connection.from);
+    const to = getWireAnchorPosition(connection.to);
 
     if (!from || !to) {
       return;
@@ -622,7 +1050,7 @@ function renderConnections() {
     const lineGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
     const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
     const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    const points = getOrthogonalWirePoints(from, to, connection);
+    const points = getWirePolylinePoints(connection);
 
     hitArea.setAttribute("points", points);
     line.setAttribute("points", points);
@@ -1288,12 +1716,18 @@ function updateEditor() {
     valueInput.value = "";
     valueInput.disabled = true;
     applyValueBtn.disabled = true;
+    rotateBtn.disabled = true;
+    duplicateBtn.disabled = true;
     deleteBtn.disabled = true;
   } else {
-    selectedName.textContent = `当前选择：${component.id}`;
+    selectedName.textContent = component.type === "node"
+      ? `当前选择：${component.id}`
+      : `当前选择：${component.id}（${getComponentRotation(component)}°）`;
     valueInput.value = component.value;
     valueInput.disabled = false;
     applyValueBtn.disabled = false;
+    rotateBtn.disabled = component.type === "node";
+    duplicateBtn.disabled = false;
     deleteBtn.disabled = false;
   }
 
@@ -1322,6 +1756,7 @@ function render() {
   renderCalculation();
   updateEditor();
   updateHistoryButtons();
+  updateCanvasView();
   saveProjectToLocalStorage();
 }
 
@@ -1339,7 +1774,7 @@ function createToolPreview(type, x, y) {
   preview.style.height = `${size.height}px`;
   preview.style.opacity = "0.85";
   preview.innerHTML = `
-    <span class="component-symbol">${config.symbol}</span>
+    ${getSchematicMarkup(type)}
     <span class="component-name">${config.prefix}</span>
     <span class="component-value">${config.value}</span>
   `;
@@ -1351,6 +1786,15 @@ function createToolPreview(type, x, y) {
 function isPointInCanvas(x, y) {
   const rect = canvas.getBoundingClientRect();
   return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function startCanvasPan(event) {
+  isPanningCanvas = true;
+  panStartX = event.clientX;
+  panStartY = event.clientY;
+  panStartOffsetX = canvasOffsetX;
+  panStartOffsetY = canvasOffsetY;
+  canvas.classList.add("panning");
 }
 
 // 工具栏拖拽：只使用 Pointer 事件创建元件，避免原生拖拽和自定义拖拽重复触发
@@ -1377,6 +1821,11 @@ canvas.addEventListener("dragleave", () => {
 
 // 点击空白画布时取消选中
 canvas.addEventListener("click", () => {
+  if (suppressNextCanvasClick) {
+    suppressNextCanvasClick = false;
+    return;
+  }
+
   clearSelection();
   render();
 });
@@ -1392,6 +1841,13 @@ wireLayer.addEventListener("pointerdown", (event) => {
   }
 
   if (event.target === wireLayer) {
+    if (isPanMode) {
+      event.preventDefault();
+      event.stopPropagation();
+      startCanvasPan(event);
+      return;
+    }
+
     clearSelection();
     render();
   }
@@ -1399,6 +1855,13 @@ wireLayer.addEventListener("pointerdown", (event) => {
 
 // 拖动画布中的已有元件，实时更新 components 中的 x、y
 document.addEventListener("pointermove", (event) => {
+  if (isPanningCanvas) {
+    canvasOffsetX = panStartOffsetX + event.clientX - panStartX;
+    canvasOffsetY = panStartOffsetY + event.clientY - panStartY;
+    updateCanvasView();
+    return;
+  }
+
   if (toolPreview) {
     const size = getComponentSize(draggedToolType);
     toolPreview.style.left = `${event.clientX - size.width / 2}px`;
@@ -1408,10 +1871,10 @@ document.addEventListener("pointermove", (event) => {
   }
 
   if (draggedWireIndex !== null && connections[draggedWireIndex]) {
-    const rect = canvas.getBoundingClientRect();
+    const worldPoint = getWorldPoint(event.clientX, event.clientY);
     const connection = connections[draggedWireIndex];
-    const from = getTerminalPosition(connection.from);
-    const to = getTerminalPosition(connection.to);
+    const from = getWireAnchorPosition(connection.from);
+    const to = getWireAnchorPosition(connection.to);
 
     if (!from || !to) {
       draggedWireIndex = null;
@@ -1421,7 +1884,7 @@ document.addEventListener("pointermove", (event) => {
     if (from.y === to.y) {
       const minY = Math.min(from.y, to.y) - GRID_SIZE * 3;
       const maxY = Math.max(from.y, to.y) + GRID_SIZE * 3;
-      const nextBendY = snapToGrid(event.clientY - rect.top);
+      const nextBendY = snapToGrid(worldPoint.y);
 
       const clampedBendY = Math.min(Math.max(nextBendY, minY), maxY);
       wireDragChanged = wireDragChanged || connection.bendY !== clampedBendY;
@@ -1429,7 +1892,7 @@ document.addEventListener("pointermove", (event) => {
     } else {
       const minX = Math.min(from.x, to.x) - GRID_SIZE * 3;
       const maxX = Math.max(from.x, to.x) + GRID_SIZE * 3;
-      const nextBendX = snapToGrid(event.clientX - rect.left);
+      const nextBendX = snapToGrid(worldPoint.x);
 
       const clampedBendX = Math.min(Math.max(nextBendX, minX), maxX);
       wireDragChanged = wireDragChanged || connection.bendX !== clampedBendX;
@@ -1445,15 +1908,15 @@ document.addEventListener("pointermove", (event) => {
   }
 
   const component = components.find((item) => item.id === draggedComponentId);
-  const rect = canvas.getBoundingClientRect();
+  const worldPoint = getWorldPoint(event.clientX, event.clientY);
 
   if (!component) {
     return;
   }
 
   const position = clampPosition(
-    event.clientX - rect.left - dragOffsetX,
-    event.clientY - rect.top - dragOffsetY,
+    worldPoint.x - dragOffsetX,
+    worldPoint.y - dragOffsetY,
     component.type
   );
 
@@ -1467,9 +1930,9 @@ document.addEventListener("pointermove", (event) => {
 document.addEventListener("pointerup", (event) => {
   if (draggedToolType && event.pointerId === currentToolPointerId) {
     if (!toolDragCreated && isPointInCanvas(event.clientX, event.clientY)) {
-      const rect = canvas.getBoundingClientRect();
+      const worldPoint = getWorldPoint(event.clientX, event.clientY);
       const size = getComponentSize(draggedToolType);
-      addComponent(draggedToolType, event.clientX - rect.left - size.width / 2, event.clientY - rect.top - size.height / 2);
+      addComponent(draggedToolType, worldPoint.x - size.width / 2, worldPoint.y - size.height / 2);
       toolDragCreated = true;
       setStatus("已添加新元件。", "success");
     }
@@ -1483,15 +1946,22 @@ document.addEventListener("pointerup", (event) => {
     recordHistory();
   }
 
+  if (isPanningCanvas) {
+    suppressNextCanvasClick = true;
+    setStatus("已移动画布视图。", "success");
+  }
+
   toolPreview = null;
   draggedToolType = null;
   currentToolPointerId = null;
   toolDragCreated = false;
   draggedComponentId = null;
   draggedWireIndex = null;
+  isPanningCanvas = false;
   componentDragChanged = false;
   wireDragChanged = false;
   canvas.classList.remove("drag-over");
+  canvas.classList.remove("panning");
 });
 
 // 清空画布、元件数据和连接数据
@@ -1522,6 +1992,23 @@ exampleBtn.addEventListener("click", loadExampleCircuit);
 parallelExampleBtn.addEventListener("click", loadParallelExampleCircuit);
 mixedExampleBtn.addEventListener("click", loadMixedExampleCircuit);
 arrangeBtn.addEventListener("click", arrangeCanvas);
+zoomOutBtn.addEventListener("click", () => {
+  setCanvasScale(canvasScale - 0.1);
+});
+zoomResetBtn.addEventListener("click", resetCanvasView);
+zoomInBtn.addEventListener("click", () => {
+  setCanvasScale(canvasScale + 0.1);
+});
+fitViewBtn.addEventListener("click", fitCanvasView);
+panModeBtn.addEventListener("click", () => {
+  isPanMode = !isPanMode;
+  canvas.classList.toggle("pan-mode", isPanMode);
+  updateCanvasView();
+  setStatus(isPanMode ? "已开启移动画布模式，拖动画布空白处即可平移。" : "已关闭移动画布模式。", "success");
+});
+downloadSvgBtn.addEventListener("click", downloadSvg);
+rotateBtn.addEventListener("click", rotateSelectedComponent);
+duplicateBtn.addEventListener("click", duplicateSelectedComponent);
 
 // 应用左侧编辑栏中的数值修改
 applyValueBtn.addEventListener("click", () => {
@@ -1559,6 +2046,12 @@ document.addEventListener("keydown", (event) => {
   } else if ((event.ctrlKey || event.metaKey) && key === "y" && !isEditingText) {
     event.preventDefault();
     redoProjectChange();
+  } else if ((event.ctrlKey || event.metaKey) && key === "d" && selectedComponentId && !isEditingText) {
+    event.preventDefault();
+    duplicateSelectedComponent();
+  } else if (key === "r" && selectedComponentId && !isEditingText) {
+    event.preventDefault();
+    rotateSelectedComponent();
   } else if (event.key === "Delete" && selectedComponentId && !isEditingText) {
     deleteSelectedComponent();
   } else if (event.key === "Delete" && selectedConnectionIndex !== null && !isEditingText) {
@@ -1622,12 +2115,14 @@ function normalizeImportedComponents(data) {
     const config = componentConfig[item.type];
     const id = String(item.id || `${config.prefix}${index + 1}`);
     const value = String(item.value || config.value);
+    const rotation = [0, 90, 180, 270].includes(Number(item.rotation)) ? Number(item.rotation) : 0;
     const position = clampPosition(Number(item.x) || 0, Number(item.y) || 0, item.type);
 
     return {
       id,
       type: item.type,
       value,
+      rotation: item.type === "node" ? 0 : rotation,
       x: position.x,
       y: position.y
     };

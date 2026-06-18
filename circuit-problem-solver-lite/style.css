@@ -107,6 +107,29 @@ body {
   font-weight: 700;
 }
 
+.symbol-preview {
+  width: 28px;
+  height: 18px;
+  display: block;
+  background: currentColor;
+}
+
+.symbol-preview-source {
+  clip-path: polygon(8% 42%, 34% 42%, 34% 20%, 42% 20%, 42% 80%, 34% 80%, 34% 58%, 8% 58%, 8% 42%, 58% 42%, 58% 32%, 68% 32%, 68% 68%, 58% 68%, 58% 58%, 92% 58%, 92% 42%);
+}
+
+.symbol-preview-resistor {
+  clip-path: polygon(0 42%, 14% 42%, 20% 12%, 30% 88%, 40% 12%, 50% 88%, 60% 12%, 70% 88%, 80% 42%, 100% 42%, 100% 58%, 86% 58%, 80% 88%, 70% 12%, 60% 88%, 50% 12%, 40% 88%, 30% 12%, 20% 88%, 14% 58%, 0 58%);
+}
+
+.symbol-preview-capacitor {
+  clip-path: polygon(0 42%, 36% 42%, 36% 0, 44% 0, 44% 100%, 36% 100%, 36% 58%, 0 58%, 0 42%, 56% 0, 64% 0, 64% 100%, 56% 100%, 56% 58%, 100% 58%, 100% 42%, 56% 42%);
+}
+
+.symbol-preview-inductor {
+  clip-path: polygon(0 42%, 10% 42%, 10% 30%, 20% 18%, 30% 30%, 30% 42%, 34% 42%, 34% 30%, 44% 18%, 54% 30%, 54% 42%, 58% 42%, 58% 30%, 68% 18%, 78% 30%, 78% 42%, 100% 42%, 100% 58%, 72% 58%, 72% 42%, 68% 38%, 64% 42%, 64% 58%, 48% 58%, 48% 42%, 44% 38%, 40% 42%, 40% 58%, 24% 58%, 24% 42%, 20% 38%, 16% 42%, 16% 58%, 0 58%);
+}
+
 .source-tool .tool-symbol,
 .component.type-source .component-symbol {
   background: #b94a48;
@@ -258,11 +281,21 @@ body {
 }
 
 .canvas-title {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
   margin-bottom: 14px;
+}
+
+.canvas-title p {
+  grid-column: 1 / -1;
+}
+
+.canvas-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .circuit-canvas {
@@ -278,15 +311,30 @@ body {
   background-size: 24px 24px;
 }
 
+.circuit-canvas.pan-mode {
+  cursor: grab;
+}
+
+.circuit-canvas.panning {
+  cursor: grabbing;
+}
+
 .circuit-canvas.drag-over {
   border-color: #5678b9;
   box-shadow: inset 0 0 0 2px rgba(86, 120, 185, 0.22);
 }
 
+.canvas-viewport,
 .wire-layer,
 .component-layer {
   position: absolute;
   inset: 0;
+  width: 2200px;
+  height: 1400px;
+}
+
+.canvas-viewport {
+  transform-origin: 0 0;
 }
 
 .wire-layer {
@@ -352,6 +400,108 @@ body {
   cursor: move;
   pointer-events: auto;
   user-select: none;
+  transform-origin: center;
+}
+
+.schematic-body {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 16px;
+  height: 20px;
+  pointer-events: none;
+}
+
+.schematic-lead {
+  position: absolute;
+  top: 9px;
+  height: 2px;
+  background: #27313f;
+}
+
+.schematic-lead.left {
+  left: 0;
+  width: 22px;
+}
+
+.schematic-lead.right {
+  right: 0;
+  width: 22px;
+}
+
+.schematic-resistor .zigzag {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  top: 1px;
+  height: 18px;
+  background: #27313f;
+  clip-path: polygon(0 46%, 10% 46%, 16% 0, 28% 100%, 40% 0, 52% 100%, 64% 0, 76% 100%, 84% 46%, 100% 46%, 100% 58%, 90% 58%, 84% 100%, 76% 0, 64% 100%, 52% 0, 40% 100%, 28% 0, 16% 100%, 10% 58%, 0 58%);
+}
+
+.schematic-capacitor .plate {
+  position: absolute;
+  top: 0;
+  width: 3px;
+  height: 20px;
+  background: #27313f;
+}
+
+.schematic-capacitor .plate.left {
+  left: 43px;
+}
+
+.schematic-capacitor .plate.right {
+  right: 43px;
+}
+
+.schematic-inductor .coil {
+  position: absolute;
+  top: 2px;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #27313f;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+}
+
+.schematic-inductor .coil.one {
+  left: 28px;
+}
+
+.schematic-inductor .coil.two {
+  left: 43px;
+}
+
+.schematic-inductor .coil.three {
+  left: 58px;
+}
+
+.schematic-source .source-circle {
+  position: absolute;
+  left: 34px;
+  top: -4px;
+  width: 28px;
+  height: 28px;
+  border: 2px solid #27313f;
+  border-radius: 50%;
+  background: #f8fafc;
+}
+
+.schematic-source .source-mark {
+  position: absolute;
+  top: -8px;
+  color: #27313f;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.schematic-source .source-mark.negative {
+  left: 21px;
+}
+
+.schematic-source .source-mark.positive {
+  right: 20px;
 }
 
 .component.type-node {
@@ -394,30 +544,29 @@ body {
 }
 
 .component-name {
+  position: absolute;
+  left: 12px;
+  bottom: 8px;
   display: block;
   font-weight: 700;
 }
 
 .component-value {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
   display: block;
-  margin-top: 4px;
+  max-width: 58px;
+  overflow: hidden;
   color: #5f6b7a;
   font-size: 14px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .component-symbol {
-  position: absolute;
-  top: -12px;
-  right: -12px;
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
+  display: none;
 }
 
 .terminal {
@@ -504,6 +653,12 @@ body {
   font-size: 13px;
 }
 
+.ghost-button.active {
+  border-color: #3f8378;
+  color: #2f6f65;
+  background: #e2f0ed;
+}
+
 .summary-panel p {
   margin: 0;
   color: #3f4b5b;
@@ -569,10 +724,21 @@ pre {
 
 @media (max-width: 760px) {
   .topbar,
-  .canvas-title,
   .json-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .canvas-title {
+    grid-template-columns: 1fr;
+  }
+
+  .canvas-tools {
+    justify-content: stretch;
+  }
+
+  .canvas-tools .ghost-button {
+    flex: 1 1 auto;
   }
 
   .topbar-actions {
