@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Circuit Problem Solver Lite V6</title>
+  <title>Circuit Problem Solver Lite V10</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
     <header class="topbar">
       <div>
-        <h1>Circuit Problem Solver Lite V6</h1>
-        <p>拼图式电路编辑器：拖拽元件、点击端点连线、保存 JSON 数据。</p>
+        <h1>Circuit Problem Solver Lite V10</h1>
+        <p>拼图式电路编辑器：拖拽元件、点击端点连线、红黑表笔测量、保存 JSON 数据。</p>
       </div>
       <div class="topbar-actions">
         <button id="undoBtn" class="ghost-button" type="button" disabled>撤销</button>
@@ -103,6 +103,27 @@
           <button id="deleteConnectionBtn" class="ghost-button danger full" type="button" disabled>删除选中导线</button>
           <button id="cancelConnectionBtn" class="ghost-button full" type="button" disabled>取消当前连线</button>
         </div>
+
+        <div class="editor-panel multimeter-panel">
+          <h2>虚拟万用表</h2>
+          <div class="meter-modes" role="group" aria-label="万用表档位">
+            <button class="meter-mode active" type="button" data-meter-mode="voltage">V</button>
+            <button class="meter-mode" type="button" data-meter-mode="current">A</button>
+            <button class="meter-mode" type="button" data-meter-mode="resistance">Ω</button>
+          </div>
+          <div class="probe-tools" role="group" aria-label="万用表表笔">
+            <button id="redProbeBtn" class="probe-button probe-red" type="button">红笔</button>
+            <button id="blackProbeBtn" class="probe-button probe-black" type="button">黑笔</button>
+            <button id="clearProbeBtn" class="probe-button" type="button">清除</button>
+          </div>
+          <p id="probeStatusText" class="probe-status">红黑表笔未放置。</p>
+          <div class="meter-screen" aria-live="polite">
+            <span id="meterModeLabel">直流电压</span>
+            <strong id="meterReading">--</strong>
+            <small id="meterTarget">请选择元件或导线</small>
+          </div>
+          <p id="meterExplanation" class="meter-explanation">选择档位后，点击画布中的元件或导线开始测量。</p>
+        </div>
       </aside>
 
       <section class="canvas-area">
@@ -115,6 +136,7 @@
             <button id="fitViewBtn" class="ghost-button small" type="button">适应视图</button>
             <button id="panModeBtn" class="ghost-button small" type="button">移动画布</button>
             <button id="downloadSvgBtn" class="ghost-button small" type="button">导出 SVG</button>
+            <button id="downloadPngBtn" class="ghost-button small" type="button">导出 PNG</button>
           </div>
           <p>拖拽元件到画布；点击端点建立连接；缩放后仍可继续编辑。</p>
         </div>
@@ -145,7 +167,7 @@
         <p id="circuitSummary">当前还没有连接。</p>
       </div>
       <div class="summary-panel">
-        <h2>电路结构分析</h2>
+        <h2>电路体检与结构分析</h2>
         <ul id="circuitAnalysis" class="analysis-list">
           <li>当前还没有元件。</li>
         </ul>
@@ -155,6 +177,8 @@
         <div class="summary-actions calculation-actions">
           <button id="copyCalculationBtn" class="ghost-button small" type="button">复制结果</button>
           <button id="downloadCalculationBtn" class="ghost-button small" type="button">下载步骤</button>
+          <button id="copyReportBtn" class="ghost-button small" type="button">复制报告</button>
+          <button id="downloadReportBtn" class="ghost-button small" type="button">下载报告</button>
         </div>
         <ul id="calculationResult" class="analysis-list">
           <li>当前还没有可计算的直流电路。</li>
@@ -174,6 +198,6 @@
     </section>
   </main>
 
-  <script src="script.js"></script>
+  <script src="script.js?v=10"></script>
 </body>
 </html>

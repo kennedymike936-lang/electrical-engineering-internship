@@ -49,6 +49,7 @@ const zoomInBtn = document.getElementById("zoomInBtn");
 const fitViewBtn = document.getElementById("fitViewBtn");
 const panModeBtn = document.getElementById("panModeBtn");
 const downloadSvgBtn = document.getElementById("downloadSvgBtn");
+const downloadPngBtn = document.getElementById("downloadPngBtn");
 const selectedName = document.getElementById("selectedName");
 const valueInput = document.getElementById("valueInput");
 const applyValueBtn = document.getElementById("applyValueBtn");
@@ -64,12 +65,23 @@ const copyJsonBtn = document.getElementById("copyJsonBtn");
 const downloadJsonBtn = document.getElementById("downloadJsonBtn");
 const copyCalculationBtn = document.getElementById("copyCalculationBtn");
 const downloadCalculationBtn = document.getElementById("downloadCalculationBtn");
+const copyReportBtn = document.getElementById("copyReportBtn");
+const downloadReportBtn = document.getElementById("downloadReportBtn");
 const importInput = document.getElementById("importInput");
 const importJsonBtn = document.getElementById("importJsonBtn");
 const statusText = document.getElementById("statusText");
 const circuitSummary = document.getElementById("circuitSummary");
 const circuitAnalysis = document.getElementById("circuitAnalysis");
 const calculationResult = document.getElementById("calculationResult");
+const meterModeButtons = document.querySelectorAll("[data-meter-mode]");
+const meterModeLabel = document.getElementById("meterModeLabel");
+const meterReading = document.getElementById("meterReading");
+const meterTarget = document.getElementById("meterTarget");
+const meterExplanation = document.getElementById("meterExplanation");
+const redProbeBtn = document.getElementById("redProbeBtn");
+const blackProbeBtn = document.getElementById("blackProbeBtn");
+const clearProbeBtn = document.getElementById("clearProbeBtn");
+const probeStatusText = document.getElementById("probeStatusText");
 const toolItems = document.querySelectorAll(".tool-item");
 
 let selectedComponentId = null;
@@ -92,6 +104,12 @@ let canvasOffsetY = 0;
 let isPanMode = false;
 let isPanningCanvas = false;
 let suppressNextCanvasClick = false;
+let meterMode = "voltage";
+let activeProbe = null;
+const meterProbes = {
+  red: null,
+  black: null
+};
 let panStartX = 0;
 let panStartY = 0;
 let panStartOffsetX = 0;
@@ -205,14 +223,15 @@ function getCircuitBounds() {
   }, { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
 
   connections.forEach((connection) => {
-    const from = getWireAnchorPosition(connection.from);
-    const to = getWireAnchorPosition(connection.to);
+    const points = getWirePolylinePoints(connection)
+      .split(" ")
+      .map((point) => {
+        const [x, y] = point.split(",").map(Number);
+        return { x, y };
+      })
+      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
 
-    [from, to].forEach((point) => {
-      if (!point) {
-        return;
-      }
-
+    points.forEach((point) => {
       bounds.minX = Math.min(bounds.minX, point.x);
       bounds.minY = Math.min(bounds.minY, point.y);
       bounds.maxX = Math.max(bounds.maxX, point.x);
@@ -380,6 +399,56 @@ function downloadSvg() {
   setStatus("SVG 电路图已开始下载。", "success");
 }
 
+function downloadPng() {
+  if (components.length === 0) {
+    setStatus("画布中还没有元件，暂时没有可导出的电路图。", "");
+    return;
+  }
+
+  const svgText = buildCircuitSvg();
+  const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(svgBlob);
+  const image = new Image();
+
+  image.onload = () => {
+    const exportCanvas = document.createElement("canvas");
+    const scale = 2;
+
+    exportCanvas.width = image.width * scale;
+    exportCanvas.height = image.height * scale;
+
+    const context = exportCanvas.getContext("2d");
+    context.fillStyle = "#eef2f6";
+    context.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+    context.drawImage(image, 0, 0, exportCanvas.width, exportCanvas.height);
+
+    exportCanvas.toBlob((blob) => {
+      if (!blob) {
+        URL.revokeObjectURL(url);
+        setStatus("PNG 生成失败，请先导出 SVG。", "error");
+        return;
+      }
+
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = downloadUrl;
+      link.download = "circuit-diagram.png";
+      link.click();
+      URL.revokeObjectURL(downloadUrl);
+      URL.revokeObjectURL(url);
+      setStatus("PNG 电路图已开始下载。", "success");
+    }, "image/png");
+  };
+
+  image.onerror = () => {
+    URL.revokeObjectURL(url);
+    setStatus("PNG 生成失败，请先导出 SVG。", "error");
+  };
+
+  image.src = url;
+}
+
 // 根据元件类型生成唯一 id，例如 R1、R2、C1
 function createComponentId(type) {
   const config = componentConfig[type];
@@ -419,11 +488,38 @@ function getProjectSnapshot(data = getProjectData()) {
   return JSON.stringify(data);
 }
 
+function resetProbeState() {
+  activeProbe = null;
+  meterProbes.red = null;
+  meterProbes.black = null;
+}
+
+function isTerminalKeyValid(key) {
+  if (!key) {
+    return false;
+  }
+
+  const { componentId, side } = parseTerminalKey(key);
+  const component = components.find((item) => item.id === componentId);
+  return Boolean(component && getTerminalKeys(component).includes(makeTerminalKey(componentId, side)));
+}
+
+function pruneInvalidProbes() {
+  if (!isTerminalKeyValid(meterProbes.red)) {
+    meterProbes.red = null;
+  }
+
+  if (!isTerminalKeyValid(meterProbes.black)) {
+    meterProbes.black = null;
+  }
+}
+
 function applyProjectData(data) {
   components = cloneProjectData(data.components || []);
   connections = cloneProjectData(data.connections || []);
   clearSelection();
   pendingTerminal = null;
+  resetProbeState();
   rebuildCounters();
 }
 
@@ -572,6 +668,40 @@ function getTerminalText(component, side) {
   }
 
   return side === "right" ? "右端" : "左端";
+}
+
+function getProbeName(probe) {
+  return probe === "red" ? "红表笔" : "黑表笔";
+}
+
+function setActiveProbe(probe) {
+  activeProbe = activeProbe === probe ? null : probe;
+  pendingTerminal = null;
+  selectedConnectionIndex = null;
+  setStatus(activeProbe ? `请选择${getProbeName(activeProbe)}要接触的端点。` : "已退出表笔放置模式。", activeProbe ? "success" : "");
+  render();
+}
+
+function clearProbes() {
+  resetProbeState();
+  setStatus("已清除红黑表笔。", "success");
+  render();
+}
+
+function handleProbeTerminalClick(probe, key) {
+  meterProbes[probe] = key;
+  activeProbe = probe === "red" && !meterProbes.black ? "black" : null;
+  selectedComponentId = null;
+  selectedConnectionIndex = null;
+  pendingTerminal = null;
+  setStatus(`${getProbeName(probe)}已接到 ${key}。`, "success");
+  render();
+}
+
+function getProbeStatusText() {
+  const redText = meterProbes.red ? `红笔：${meterProbes.red}` : "红笔：未放置";
+  const blackText = meterProbes.black ? `黑笔：${meterProbes.black}` : "黑笔：未放置";
+  return `${redText}；${blackText}`;
 }
 
 // 获取端点在画布中的坐标，用于绘制连线
@@ -800,18 +930,20 @@ function addComponent(type, x, y) {
 
 function loadExampleCircuit() {
   components = [
-    { id: "V1", type: "source", value: "12V", rotation: 0, x: 96, y: 168 },
-    { id: "R1", type: "resistor", value: "10Ω", rotation: 0, x: 312, y: 168 },
-    { id: "N1", type: "node", value: "node", rotation: 0, x: 528, y: 192 }
+    { id: "V1", type: "source", value: "12V", rotation: 90, x: 96, y: 216 },
+    { id: "R1", type: "resistor", value: "10Ω", rotation: 0, x: 312, y: 120 },
+    { id: "R2", type: "resistor", value: "20Ω", rotation: 0, x: 552, y: 120 }
   ];
 
   connections = [
     { from: "V1.right", to: "R1.left" },
-    { from: "R1.right", to: "N1.center" }
+    { from: "R1.right", to: "R2.left" },
+    { from: "R2.right", to: "V1.left", bendY: 360 }
   ];
 
   clearSelection();
   pendingTerminal = null;
+  resetProbeState();
   rebuildCounters();
   render();
   recordHistory();
@@ -839,6 +971,7 @@ function loadParallelExampleCircuit() {
 
   clearSelection();
   pendingTerminal = null;
+  resetProbeState();
   rebuildCounters();
   render();
   recordHistory();
@@ -868,6 +1001,7 @@ function loadMixedExampleCircuit() {
 
   clearSelection();
   pendingTerminal = null;
+  resetProbeState();
   rebuildCounters();
   render();
   recordHistory();
@@ -956,6 +1090,7 @@ function selectConnection(index) {
 // 渲染画布中的所有元件
 function renderComponents() {
   componentLayer.innerHTML = "";
+  const diagnostic = getCircuitDiagnostics();
 
   components.forEach((component) => {
     const config = componentConfig[component.type];
@@ -994,6 +1129,19 @@ function renderComponents() {
 
       if (pendingTerminal === key) {
         terminal.classList.add("active");
+      }
+
+      if (meterProbes.red === key) {
+        terminal.classList.add("probe-red");
+      }
+
+      if (meterProbes.black === key) {
+        terminal.classList.add("probe-black");
+      }
+
+      if (diagnostic.terminalIssues.has(key)) {
+        terminal.classList.add("warning");
+        terminal.title = `${key}：尚未正确接入回路`;
       }
 
       // 点击端点：第一次选择起点，第二次选择终点并生成连接。
@@ -1107,6 +1255,11 @@ function renderConnections() {
 // 处理端点点击，建立 connections 数据
 function handleTerminalClick(componentId, side) {
   const key = makeTerminalKey(componentId, side);
+
+  if (activeProbe) {
+    handleProbeTerminalClick(activeProbe, key);
+    return;
+  }
 
   if (!pendingTerminal) {
     pendingTerminal = key;
@@ -1305,6 +1458,163 @@ function getConnectedTerminals(terminalKey) {
 
     return terminals;
   }, []);
+}
+
+function getTerminalKeys(component) {
+  return component.type === "node"
+    ? [`${component.id}.center`]
+    : [`${component.id}.left`, `${component.id}.right`];
+}
+
+// 建立端点级电气图。导线连接端点，非电源元件内部连接左右端。
+function buildTerminalGraph() {
+  const graph = new Map();
+
+  components.forEach((component) => {
+    getTerminalKeys(component).forEach((key) => graph.set(key, []));
+  });
+
+  function addEdge(from, to, viaComponent = null) {
+    if (!graph.has(from) || !graph.has(to)) {
+      return;
+    }
+
+    graph.get(from).push({ key: to, viaComponent });
+    graph.get(to).push({ key: from, viaComponent });
+  }
+
+  connections.forEach((connection) => addEdge(connection.from, connection.to));
+
+  components.forEach((component) => {
+    if (component.type !== "node" && component.type !== "source") {
+      addEdge(`${component.id}.left`, `${component.id}.right`, component.id);
+    }
+  });
+
+  return graph;
+}
+
+function findTerminalPath(startKey, endKey) {
+  const graph = buildTerminalGraph();
+
+  if (!graph.has(startKey) || !graph.has(endKey)) {
+    return [];
+  }
+
+  const queue = [startKey];
+  const visited = new Set([startKey]);
+  const previous = new Map();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+
+    if (current === endKey) {
+      break;
+    }
+
+    graph.get(current).forEach((edge) => {
+      if (!visited.has(edge.key)) {
+        visited.add(edge.key);
+        previous.set(edge.key, { key: current, viaComponent: edge.viaComponent });
+        queue.push(edge.key);
+      }
+    });
+  }
+
+  if (!visited.has(endKey)) {
+    return [];
+  }
+
+  const path = [];
+  let current = endKey;
+
+  while (current !== startKey) {
+    const step = previous.get(current);
+    path.unshift({ from: step.key, to: current, viaComponent: step.viaComponent });
+    current = step.key;
+  }
+
+  return path;
+}
+
+function isWireOnlyTerminalPath(path) {
+  return path.length > 0 && path.every((step) => !step.viaComponent);
+}
+
+function getCircuitDiagnostics() {
+  const terminalIssues = new Set();
+  const items = [];
+  const sources = components.filter((component) => component.type === "source");
+
+  components.forEach((component) => {
+    const terminalKeys = getTerminalKeys(component);
+    const minimumConnections = component.type === "node" ? 2 : 1;
+
+    terminalKeys.forEach((key) => {
+      if (getConnectedTerminals(key).length < minimumConnections) {
+        terminalIssues.add(key);
+      }
+    });
+  });
+
+  if (components.length === 0) {
+    return {
+      terminalIssues,
+      closedSources: new Set(),
+      shortSources: new Set(),
+      items: [{ type: "info", message: "当前还没有元件，可以先拖入一个直流电源和电阻。" }]
+    };
+  }
+
+  if (sources.length === 0) {
+    items.push({ type: "warning", message: "没有检测到直流电源，当前电路无法进行直流计算。" });
+  } else if (sources.length > 1) {
+    items.push({ type: "warning", message: `检测到 ${sources.length} 个直流电源，当前版本暂不计算多电源电路。` });
+  }
+
+  const closedSources = new Set();
+  const shortSources = new Set();
+
+  sources.forEach((source) => {
+    const path = findTerminalPath(`${source.id}.right`, `${source.id}.left`);
+
+    if (isWireOnlyTerminalPath(path)) {
+      shortSources.add(source.id);
+      terminalIssues.add(`${source.id}.left`);
+      terminalIssues.add(`${source.id}.right`);
+      items.push({ type: "warning", message: `短路风险：${source.id} 的正极和负极被导线或等电位点直接连在一起，中间没有负载电阻。` });
+    } else if (path.length > 0) {
+      closedSources.add(source.id);
+      items.push({ type: "success", message: `${source.id} 的正极和负极已经通过外部元件形成闭合回路。` });
+    } else {
+      terminalIssues.add(`${source.id}.left`);
+      terminalIssues.add(`${source.id}.right`);
+      items.push({ type: "warning", message: `${source.id} 尚未形成闭合回路，请检查红色端点和回路线。` });
+    }
+  });
+
+  const danglingLabels = Array.from(terminalIssues).map(getTerminalLabel);
+
+  if (danglingLabels.length > 0) {
+    items.push({
+      type: "warning",
+      message: `发现 ${danglingLabels.length} 个待处理端点：${danglingLabels.join("、")}。`
+    });
+  } else if (sources.length > 0) {
+    items.push({ type: "success", message: "所有必需端点都已接入，未发现悬空端点。" });
+  }
+
+  const componentGraph = buildComponentGraph();
+  const activeIds = getConnectedComponentIds(componentGraph);
+
+  if (activeIds.length > 0 && activeIds.length < components.length) {
+    const disconnected = components
+      .filter((component) => !activeIds.includes(component.id))
+      .map((component) => component.id);
+    items.push({ type: "warning", message: `存在未接入主电路的元件：${disconnected.join("、")}。` });
+  }
+
+  return { terminalIssues, closedSources, shortSources, items };
 }
 
 function getNodeIdsConnectedToComponent(componentId) {
@@ -1535,13 +1845,22 @@ function calculateSeriesCircuit() {
     return ["当前还没有元件，无法计算。"];
   }
 
-  const graph = buildComponentGraph();
-  const simplePathComponents = getSimplePathComponents(graph);
+  const sources = components.filter((component) => component.type === "source");
+  const diagnostics = getCircuitDiagnostics();
 
-  if (simplePathComponents.length === 0) {
-    return ["当前不是单一路径，暂不进行串联计算。"];
+  if (sources.length !== 1 || !diagnostics.closedSources.has(sources[0].id)) {
+    return ["当前电路尚未闭合，无法产生持续电流。请先把电源正极经过负载接回负极。"];
   }
 
+  const source = sources[0];
+  const path = findTerminalPath(`${source.id}.right`, `${source.id}.left`);
+  const pathComponentIds = path
+    .map((step) => step.viaComponent)
+    .filter(Boolean);
+  const simplePathComponents = [
+    source,
+    ...pathComponentIds.map((id) => components.find((component) => component.id === id)).filter(Boolean)
+  ];
   const unsupported = simplePathComponents.filter((component) => {
     return !["source", "resistor", "node"].includes(component.type);
   });
@@ -1550,18 +1869,26 @@ function calculateSeriesCircuit() {
     return [`当前路径包含 ${unsupported.map((component) => component.id).join("、")}，暂不计算电容、电感或交流相量。`];
   }
 
-  const sources = simplePathComponents.filter((component) => component.type === "source");
   const resistors = simplePathComponents.filter((component) => component.type === "resistor");
-
-  if (sources.length !== 1) {
-    return ["串联计算需要恰好 1 个直流电源。"];
-  }
 
   if (resistors.length === 0) {
     return ["串联计算至少需要 1 个电阻。"];
   }
 
-  const voltage = parseElectricalValue(sources[0].value, "source");
+  const hasBranch = components.some((component) => {
+    if (component.type === "node") {
+      return getConnectedTerminals(`${component.id}.center`).length > 2;
+    }
+
+    return getConnectedTerminals(`${component.id}.left`).length > 1 ||
+      getConnectedTerminals(`${component.id}.right`).length > 1;
+  });
+
+  if (hasBranch || new Set(pathComponentIds).size !== components.filter((component) => component.type !== "node" && component.type !== "source").length) {
+    return ["当前闭合电路包含分支或多个独立部分，暂不按纯串联电路计算。"];
+  }
+
+  const voltage = parseElectricalValue(source.value, "source");
   const resistorValues = resistors.map((component) => ({
     component,
     resistance: parseElectricalValue(component.value, "resistor")
@@ -1569,7 +1896,7 @@ function calculateSeriesCircuit() {
   const invalidResistor = resistorValues.find((item) => item.resistance === null || item.resistance <= 0);
 
   if (voltage === null) {
-    return [`无法识别 ${sources[0].id} 的电压值，请输入类似 12V 的格式。`];
+    return [`无法识别 ${source.id} 的电压值，请输入类似 12V 的格式。`];
   }
 
   if (invalidResistor) {
@@ -1579,7 +1906,7 @@ function calculateSeriesCircuit() {
   const totalResistance = resistorValues.reduce((sum, item) => sum + item.resistance, 0);
   const current = voltage / totalResistance;
   const lines = [
-    `识别到简单串联路径：${simplePathComponents.map((component) => component.id).join(" → ")}。`,
+    `识别到闭合串联回路：${source.id} → ${resistors.map((component) => component.id).join(" → ")} → ${source.id}。`,
     `串联总电阻公式：R总 = ${resistorValues.map((item) => item.component.id).join(" + ")}。`,
     `R总 = ${formatNumber(totalResistance, "Ω")}。`,
     `总电流公式：I = U / R总 = ${formatNumber(voltage, "V")} / ${formatNumber(totalResistance, "Ω")}。`,
@@ -1591,8 +1918,485 @@ function calculateSeriesCircuit() {
     lines.push(`${item.component.id} 分压：U = I × R = ${formatNumber(current, "A")} × ${formatNumber(item.resistance, "Ω")} = ${formatNumber(voltageDrop, "V")}。`);
   });
 
-  lines.push("说明：这是基础直流串联计算，暂不判断复杂闭合回路、分支电路或电容电感动态过程。");
+  lines.push("说明：只有电源正负极通过负载形成闭合回路后，程序才会给出直流电流。");
   return lines;
+}
+
+function createWirePotentialMap() {
+  const parent = new Map();
+
+  components.forEach((component) => {
+    getTerminalKeys(component).forEach((key) => parent.set(key, key));
+  });
+
+  function find(key) {
+    if (!parent.has(key)) {
+      return null;
+    }
+
+    const currentParent = parent.get(key);
+
+    if (currentParent !== key) {
+      parent.set(key, find(currentParent));
+    }
+
+    return parent.get(key);
+  }
+
+  function union(first, second) {
+    const firstRoot = find(first);
+    const secondRoot = find(second);
+
+    if (firstRoot && secondRoot && firstRoot !== secondRoot) {
+      parent.set(secondRoot, firstRoot);
+    }
+  }
+
+  connections.forEach((connection) => union(connection.from, connection.to));
+
+  const potentials = new Map();
+
+  return {
+    set(key, value) {
+      const root = find(key);
+
+      if (root) {
+        potentials.set(root, value);
+      }
+    },
+    get(key) {
+      const root = find(key);
+      return root && potentials.has(root) ? potentials.get(root) : null;
+    }
+  };
+}
+
+function buildDcMeasurementModel() {
+  const sources = components.filter((component) => component.type === "source");
+  const unsupported = components.filter((component) => !["source", "resistor", "node"].includes(component.type));
+  const diagnostics = getCircuitDiagnostics();
+
+  if (sources.length !== 1) {
+    return { error: "万用表计算暂时需要恰好一个直流电源。" };
+  }
+
+  const source = sources[0];
+  const sourceVoltage = parseElectricalValue(source.value, "source");
+
+  if (sourceVoltage === null) {
+    return { error: `无法识别 ${source.id} 的电压值。` };
+  }
+
+  if (unsupported.length > 0) {
+    return { error: "当前回路含有电容或电感，V10 暂不计算动态测量值。" };
+  }
+
+  if (diagnostics.shortSources.has(source.id)) {
+    return {
+      error: "检测到电源正负极疑似短路，已停止万用表计算。请先加入负载电阻或删除短接导线。",
+      shortCircuit: true,
+      source,
+      sourceVoltage
+    };
+  }
+
+  if (!diagnostics.closedSources.has(source.id)) {
+    const potentials = createWirePotentialMap();
+    potentials.set(`${source.id}.right`, sourceVoltage);
+    potentials.set(`${source.id}.left`, 0);
+
+    return {
+      error: "当前电路未闭合，电流为 0 A；负载电压需要补全回路后计算。",
+      openCircuit: true,
+      source,
+      sourceVoltage,
+      potentials
+    };
+  }
+
+  const potentials = createWirePotentialMap();
+  const componentMeasurements = new Map();
+  let totalCurrent = null;
+  let circuitType = "";
+  const mixedInfo = getMixedCircuitInfo();
+  const parallelInfo = getParallelCircuitInfo();
+
+  if (mixedInfo) {
+    const seriesResistance = parseElectricalValue(mixedInfo.seriesResistor.value, "resistor");
+    const parallelValues = mixedInfo.parallelResistors.map((component) => ({
+      component,
+      resistance: parseElectricalValue(component.value, "resistor")
+    }));
+
+    if (seriesResistance === null || parallelValues.some((item) => item.resistance === null || item.resistance <= 0)) {
+      return { error: "回路中存在无法识别的电阻值。" };
+    }
+
+    const parallelResistance = 1 / parallelValues.reduce((sum, item) => sum + 1 / item.resistance, 0);
+    totalCurrent = sourceVoltage / (seriesResistance + parallelResistance);
+    const branchVoltage = sourceVoltage - totalCurrent * seriesResistance;
+
+    potentials.set(`${source.id}.right`, sourceVoltage);
+    potentials.set(`${source.id}.left`, 0);
+    potentials.set(`${mixedInfo.branchNodeId}.center`, branchVoltage);
+    potentials.set(`${mixedInfo.returnNodeId}.center`, 0);
+    circuitType = "混联";
+  } else if (parallelInfo) {
+    const resistorValues = parallelInfo.resistors.map((component) => parseElectricalValue(component.value, "resistor"));
+
+    if (resistorValues.some((value) => value === null || value <= 0)) {
+      return { error: "并联回路中存在无法识别的电阻值。" };
+    }
+
+    const totalResistance = 1 / resistorValues.reduce((sum, value) => sum + 1 / value, 0);
+    totalCurrent = sourceVoltage / totalResistance;
+    potentials.set(`${source.id}.right`, sourceVoltage);
+    potentials.set(`${source.id}.left`, 0);
+    circuitType = "并联";
+  } else {
+    const path = findTerminalPath(`${source.id}.right`, `${source.id}.left`);
+    const resistorIds = path.map((step) => step.viaComponent).filter(Boolean);
+    const resistorValues = resistorIds.map((id) => {
+      const component = components.find((item) => item.id === id);
+      return {
+        component,
+        resistance: component ? parseElectricalValue(component.value, "resistor") : null
+      };
+    });
+
+    if (path.length === 0 || resistorValues.length === 0 ||
+        resistorValues.some((item) => !item.component || item.component.type !== "resistor" || item.resistance === null || item.resistance <= 0)) {
+      return { error: "当前闭合回路不是 V10 支持的纯电阻串联、并联或简单混联结构。" };
+    }
+
+    const totalResistance = resistorValues.reduce((sum, item) => sum + item.resistance, 0);
+    totalCurrent = sourceVoltage / totalResistance;
+    let currentPotential = sourceVoltage;
+
+    path.forEach((step) => {
+      potentials.set(step.from, currentPotential);
+
+      if (step.viaComponent) {
+        const item = resistorValues.find((entry) => entry.component.id === step.viaComponent);
+        currentPotential -= totalCurrent * item.resistance;
+      }
+
+      potentials.set(step.to, currentPotential);
+    });
+
+    circuitType = "串联";
+  }
+
+  components.forEach((component) => {
+    if (component.type === "source") {
+      componentMeasurements.set(component.id, {
+        voltage: sourceVoltage,
+        current: totalCurrent,
+        power: sourceVoltage * totalCurrent
+      });
+      return;
+    }
+
+    if (component.type === "node") {
+      componentMeasurements.set(component.id, {
+        voltage: potentials.get(`${component.id}.center`)
+      });
+      return;
+    }
+
+    if (component.type === "resistor") {
+      const leftPotential = potentials.get(`${component.id}.left`);
+      const rightPotential = potentials.get(`${component.id}.right`);
+      const resistance = parseElectricalValue(component.value, "resistor");
+
+      if (leftPotential !== null && rightPotential !== null && resistance !== null && resistance > 0) {
+        const voltage = Math.abs(leftPotential - rightPotential);
+        const current = voltage / resistance;
+        componentMeasurements.set(component.id, {
+          resistance,
+          voltage,
+          current,
+          power: voltage * current
+        });
+      }
+    }
+  });
+
+  return {
+    circuitType,
+    source,
+    sourceVoltage,
+    totalCurrent,
+    potentials,
+    componentMeasurements
+  };
+}
+
+function formatMeterValue(value, unit) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+
+  if (Math.abs(value) >= 1000 && unit === "Ω") {
+    return `${(value / 1000).toFixed(3).replace(/\.?0+$/, "")} kΩ`;
+  }
+
+  const digits = Math.abs(value) < 0.01 && value !== 0 ? 5 : 3;
+  return `${value.toFixed(digits).replace(/\.?0+$/, "")} ${unit}`;
+}
+
+function getSelectedWireMeasurement(model) {
+  const connection = selectedConnectionIndex === null ? null : connections[selectedConnectionIndex];
+
+  if (!connection) {
+    return null;
+  }
+
+  const fromPotential = model.potentials ? model.potentials.get(connection.from) : null;
+  const toPotential = model.potentials ? model.potentials.get(connection.to) : null;
+  const connectedIds = [connection.from, connection.to]
+    .map((key) => parseTerminalKey(key).componentId);
+  const currents = connectedIds
+    .map((id) => model.componentMeasurements && model.componentMeasurements.get(id))
+    .filter(Boolean)
+    .map((measurement) => measurement.current)
+    .filter(Number.isFinite);
+  const uniqueCurrents = currents.filter((value, index) => {
+    return currents.findIndex((other) => Math.abs(other - value) < 1e-9) === index;
+  });
+
+  return {
+    voltage: fromPotential !== null && toPotential !== null ? Math.abs(fromPotential - toPotential) : null,
+    current: uniqueCurrents.length === 1 ? uniqueCurrents[0] : null,
+    resistance: 0
+  };
+}
+
+function getProbePotential(model, terminalKey) {
+  if (!terminalKey) {
+    return null;
+  }
+
+  if (model.potentials) {
+    const potential = model.potentials.get(terminalKey);
+
+    if (potential !== null) {
+      return potential;
+    }
+  }
+
+  if (model.source) {
+    if (terminalKey === `${model.source.id}.right`) {
+      return model.sourceVoltage;
+    }
+
+    if (terminalKey === `${model.source.id}.left`) {
+      return 0;
+    }
+  }
+
+  return null;
+}
+
+function getProbeResistance() {
+  if (!meterProbes.red || !meterProbes.black) {
+    return null;
+  }
+
+  const red = parseTerminalKey(meterProbes.red);
+  const black = parseTerminalKey(meterProbes.black);
+
+  if (red.componentId === black.componentId) {
+    const component = components.find((item) => item.id === red.componentId);
+
+    if (component && component.type === "resistor" && red.side !== black.side) {
+      return parseElectricalValue(component.value, "resistor");
+    }
+  }
+
+  if (meterProbes.red === meterProbes.black) {
+    return 0;
+  }
+
+  const directWire = connections.some((connection) => {
+    return (connection.from === meterProbes.red && connection.to === meterProbes.black) ||
+      (connection.from === meterProbes.black && connection.to === meterProbes.red);
+  });
+
+  return directWire ? 0 : null;
+}
+
+function renderProbeControls() {
+  pruneInvalidProbes();
+  redProbeBtn.classList.toggle("active", activeProbe === "red");
+  blackProbeBtn.classList.toggle("active", activeProbe === "black");
+  clearProbeBtn.disabled = !meterProbes.red && !meterProbes.black;
+  probeStatusText.textContent = getProbeStatusText();
+}
+
+function renderProbeMeasurement(model, units) {
+  if (!meterProbes.red && !meterProbes.black) {
+    return false;
+  }
+
+  meterTarget.textContent = getProbeStatusText();
+
+  if (!meterProbes.red || !meterProbes.black) {
+    meterReading.textContent = "--";
+    meterExplanation.textContent = "请继续放置另一支表笔，才能得到两点之间的测量值。";
+    return true;
+  }
+
+  if (meterMode === "current") {
+    meterReading.textContent = "--";
+    meterExplanation.textContent = "双表笔模式主要用于测两点电压差；电流请继续点击元件或导线查看估算值。";
+    return true;
+  }
+
+  if (meterMode === "resistance") {
+    const resistance = getProbeResistance();
+    meterReading.textContent = Number.isFinite(resistance) ? formatMeterValue(resistance, units.resistance) : "--";
+    meterExplanation.textContent = Number.isFinite(resistance)
+      ? "红黑表笔跨接在可识别电阻或同一理想导线两端。"
+      : "当前两点之间不是单个可识别电阻，暂不能给出等效电阻。";
+    return true;
+  }
+
+  if (model.error && !model.openCircuit) {
+    meterReading.textContent = "--";
+    meterExplanation.textContent = model.error;
+    return true;
+  }
+
+  const redPotential = getProbePotential(model, meterProbes.red);
+  const blackPotential = getProbePotential(model, meterProbes.black);
+
+  if (redPotential === null || blackPotential === null) {
+    meterReading.textContent = "--";
+    meterExplanation.textContent = model.openCircuit
+      ? "开路时只能稳定读取电源两端电压，负载端电位需要闭合回路后才能计算。"
+      : "当前两点电位暂时无法由支持的电路结构推导。";
+    return true;
+  }
+
+  const voltage = redPotential - blackPotential;
+  meterReading.textContent = formatMeterValue(voltage, units.voltage);
+  meterExplanation.textContent = `红笔电位 ${formatMeterValue(redPotential, "V")}，黑笔电位 ${formatMeterValue(blackPotential, "V")}，读数为红笔减黑笔。`;
+  return true;
+}
+
+function renderMultimeter() {
+  const modeLabels = {
+    voltage: "直流电压",
+    current: "直流电流",
+    resistance: "电阻"
+  };
+  const units = {
+    voltage: "V",
+    current: "A",
+    resistance: "Ω"
+  };
+  const component = components.find((item) => item.id === selectedComponentId);
+  const connection = selectedConnectionIndex === null ? null : connections[selectedConnectionIndex];
+  const model = buildDcMeasurementModel();
+
+  renderProbeControls();
+  meterModeLabel.textContent = modeLabels[meterMode];
+  meterModeButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.meterMode === meterMode);
+  });
+
+  if (renderProbeMeasurement(model, units)) {
+    return;
+  }
+
+  if (!component && !connection) {
+    meterReading.textContent = "--";
+    meterTarget.textContent = "请选择元件或导线";
+    meterExplanation.textContent = "选择档位后，点击画布中的元件或导线开始测量。";
+    return;
+  }
+
+  if (component) {
+    meterTarget.textContent = getComponentLabel(component.id);
+
+    if (meterMode === "resistance" && component.type === "resistor") {
+      const resistance = parseElectricalValue(component.value, "resistor");
+      meterReading.textContent = resistance === null ? "--" : formatMeterValue(resistance, "Ω");
+      meterExplanation.textContent = resistance === null
+        ? "无法识别该电阻值，请输入类似 10Ω 或 2.2kΩ。"
+        : "电阻档读取元件标称阻值；实际测量时应先断开电源。";
+      return;
+    }
+
+    if (meterMode === "voltage" && component.type === "source") {
+      const voltage = parseElectricalValue(component.value, "source");
+      meterReading.textContent = voltage === null ? "--" : formatMeterValue(voltage, "V");
+      meterExplanation.textContent = "这是直流电源正负极之间的标称电压。";
+      return;
+    }
+
+    if (meterMode === "current" && model.openCircuit) {
+      meterReading.textContent = "0 A";
+      meterExplanation.textContent = "电路没有闭合，因此没有持续电流。";
+      return;
+    }
+
+    if (model.error) {
+      meterReading.textContent = "--";
+      meterExplanation.textContent = model.error;
+      return;
+    }
+
+    const measurement = model.componentMeasurements.get(component.id);
+
+    if (!measurement || !Number.isFinite(measurement[meterMode])) {
+      meterReading.textContent = "--";
+      meterExplanation.textContent = component.type === "node"
+        ? "等电位点可测相对电压，但不能单独定义电流或电阻。"
+        : "当前档位暂时不能测量这个元件。";
+      return;
+    }
+
+    meterReading.textContent = formatMeterValue(measurement[meterMode], units[meterMode]);
+
+    if (component.type === "resistor") {
+      meterExplanation.textContent = `${model.circuitType}计算：U=${formatMeterValue(measurement.voltage, "V")}，I=${formatMeterValue(measurement.current, "A")}，P=${formatMeterValue(measurement.power, "W")}。`;
+    } else if (component.type === "node") {
+      meterExplanation.textContent = `相对于 ${model.source.id} 负极的节点电压。`;
+    } else {
+      meterExplanation.textContent = `电源正在向当前${model.circuitType}回路提供约 ${formatMeterValue(measurement.power, "W")}。`;
+    }
+
+    return;
+  }
+
+  meterTarget.textContent = `${connection.from} ↔ ${connection.to}`;
+
+  if (meterMode === "resistance") {
+    meterReading.textContent = "0 Ω";
+    meterExplanation.textContent = "理想导线电阻按 0Ω 处理。";
+    return;
+  }
+
+  if (meterMode === "current" && model.openCircuit) {
+    meterReading.textContent = "0 A";
+    meterExplanation.textContent = "开路状态下，这条导线没有持续电流。";
+    return;
+  }
+
+  if (model.error) {
+    meterReading.textContent = "--";
+    meterExplanation.textContent = model.error;
+    return;
+  }
+
+  const wireMeasurement = getSelectedWireMeasurement(model);
+  const value = wireMeasurement ? wireMeasurement[meterMode] : null;
+  meterReading.textContent = Number.isFinite(value) ? formatMeterValue(value, units[meterMode]) : "--";
+  meterExplanation.textContent = Number.isFinite(value)
+    ? (meterMode === "voltage" ? "理想导线两端应为同一电位，因此压降接近 0V。" : "该导线电流由相邻支路电流确定。")
+    : "这条导线位于分流节点，单独选择导线无法唯一确定各方向电流。";
 }
 
 function renderCalculation() {
@@ -1609,6 +2413,17 @@ function renderCalculation() {
 
 // 统一生成当前可识别电路的解题步骤，供页面显示、复制和下载复用
 function getCalculationLines() {
+  const diagnostics = getCircuitDiagnostics();
+  const sources = components.filter((component) => component.type === "source");
+
+  if (sources.length === 1 && diagnostics.shortSources.has(sources[0].id)) {
+    return [`检测到 ${sources[0].id} 正负极疑似短路，请先加入电阻负载或删除直接短接的导线，再进行计算。`];
+  }
+
+  if (sources.length === 1 && !diagnostics.closedSources.has(sources[0].id)) {
+    return ["当前电路尚未闭合，无法产生持续电流。请根据“电路体检”中的红色端点提示补全回路。"];
+  }
+
   return calculateMixedCircuit() || calculateParallelCircuit() || calculateSeriesCircuit();
 }
 
@@ -1624,40 +2439,84 @@ function getCalculationText() {
   ].join("\n");
 }
 
-function analyzeCircuit() {
-  if (components.length === 0) {
-    return ["当前还没有元件。"];
-  }
+function getProjectReportText() {
+  const createdAt = new Date().toLocaleString("zh-CN");
+  const componentLines = components.length === 0
+    ? ["暂无元件。"]
+    : components.map((component) => {
+      const rotationText = component.type === "node" ? "" : `，旋转 ${getComponentRotation(component)}°`;
+      return `${component.id}：${componentConfig[component.type].label}，数值 ${component.value}，位置 (${component.x}, ${component.y})${rotationText}`;
+    });
+  const connectionLines = connections.length === 0
+    ? ["暂无导线连接。"]
+    : connections.map((connection, index) => `${index + 1}. ${getTerminalLabel(connection.from)} ↔ ${getTerminalLabel(connection.to)}`);
+  const analysisLines = analyzeCircuit().map((entry) => {
+    const result = typeof entry === "string" ? { type: "info", message: entry } : entry;
+    return `${result.type}：${result.message}`;
+  });
+  const calculationLines = getCalculationLines();
 
+  return [
+    "Circuit Problem Solver Lite V10 - 中文电路报告",
+    `生成时间：${createdAt}`,
+    "",
+    "一、元件清单",
+    ...componentLines,
+    "",
+    "二、连接关系",
+    ...connectionLines,
+    "",
+    "三、电路体检",
+    ...analysisLines,
+    "",
+    "四、直流计算步骤",
+    ...calculationLines,
+    "",
+    "五、当前万用表读数",
+    `档位：${meterModeLabel.textContent}`,
+    `对象：${meterTarget.textContent}`,
+    `读数：${meterReading.textContent}`,
+    `说明：${meterExplanation.textContent}`
+  ].join("\n");
+}
+
+function analyzeCircuit() {
+  const diagnostics = getCircuitDiagnostics();
+  if (components.length === 0) {
+    return diagnostics.items;
+  }
   const graph = buildComponentGraph();
   const connectedIds = getConnectedComponentIds(graph);
   const isolatedComponents = components.filter((component) => graph.get(component.id).degree === 0);
   const nodeCount = components.filter((component) => component.type === "node").length;
   const simplePath = findSimplePath(graph);
   const lines = [
-    `当前共有 ${components.length} 个元件、${connections.length} 条导线。`
+    ...diagnostics.items,
+    { type: "info", message: `当前共有 ${components.length} 个元件、${connections.length} 条导线。` }
   ];
 
   if (isolatedComponents.length > 0) {
-    lines.push(`还有 ${isolatedComponents.length} 个元件没有接入电路：${isolatedComponents.map((component) => component.id).join("、")}。`);
+    lines.push({ type: "warning", message: `还有 ${isolatedComponents.length} 个元件没有接入电路：${isolatedComponents.map((component) => component.id).join("、")}。` });
   } else {
-    lines.push("所有元件都已经至少连接了一条导线。");
+    lines.push({ type: "success", message: "所有元件都已经至少连接了一条导线。" });
   }
 
   if (nodeCount > 0) {
-    lines.push(`检测到 ${nodeCount} 个等电位点，可用于表示同一电位的汇合位置。`);
+    lines.push({ type: "info", message: `检测到 ${nodeCount} 个等电位点，可用于表示同一电位的汇合位置。` });
   }
 
-  if (simplePath.length >= 2) {
-    lines.push(`初步判断：${simplePath.join(" → ")} 形成一条简单连接路径，后续可以在这里继续做串联识别。`);
+  if (diagnostics.closedSources.size > 0) {
+    lines.push({ type: "success", message: "当前主电源已经形成闭合回路，可以继续进行支持范围内的计算。" });
+  } else if (simplePath.length >= 2) {
+    lines.push({ type: "info", message: `结构路径：${simplePath.join(" → ")}。` });
   } else if (connectedIds.length > 0) {
-    lines.push("当前连接关系不是单一路径，可能存在分支、回路或多个独立部分。");
+    lines.push({ type: "info", message: "当前连接关系包含分支、回路或多个独立部分。" });
   } else {
-    lines.push("当前还没有形成可分析的连接路径。");
+    lines.push({ type: "info", message: "当前还没有形成可分析的连接路径。" });
   }
 
   Array.from(graph.values()).forEach((entry) => {
-    lines.push(describeComponentConnection(entry));
+    lines.push({ type: "info", message: describeComponentConnection(entry) });
   });
 
   return lines;
@@ -1666,9 +2525,11 @@ function analyzeCircuit() {
 function renderAnalysis() {
   circuitAnalysis.innerHTML = "";
 
-  analyzeCircuit().forEach((line) => {
+  analyzeCircuit().forEach((entry) => {
     const item = document.createElement("li");
-    item.textContent = line;
+    const result = typeof entry === "string" ? { type: "info", message: entry } : entry;
+    item.textContent = result.message;
+    item.classList.add(`analysis-${result.type}`);
     circuitAnalysis.appendChild(item);
   });
 }
@@ -1754,6 +2615,7 @@ function render() {
   renderSummary();
   renderAnalysis();
   renderCalculation();
+  renderMultimeter();
   updateEditor();
   updateHistoryButtons();
   updateCanvasView();
@@ -1976,6 +2838,7 @@ clearBtn.addEventListener("click", () => {
   connections = [];
   clearSelection();
   pendingTerminal = null;
+  resetProbeState();
   rebuildCounters();
   setStatus("画布已清空。", "success");
   render();
@@ -1984,6 +2847,15 @@ clearBtn.addEventListener("click", () => {
 
 undoBtn.addEventListener("click", undoProjectChange);
 redoBtn.addEventListener("click", redoProjectChange);
+meterModeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    meterMode = button.dataset.meterMode;
+    renderMultimeter();
+  });
+});
+redProbeBtn.addEventListener("click", () => setActiveProbe("red"));
+blackProbeBtn.addEventListener("click", () => setActiveProbe("black"));
+clearProbeBtn.addEventListener("click", clearProbes);
 restoreSavedBtn.addEventListener("click", () => {
   restoreSavedProject(true);
 });
@@ -2007,6 +2879,7 @@ panModeBtn.addEventListener("click", () => {
   setStatus(isPanMode ? "已开启移动画布模式，拖动画布空白处即可平移。" : "已关闭移动画布模式。", "success");
 });
 downloadSvgBtn.addEventListener("click", downloadSvg);
+downloadPngBtn.addEventListener("click", downloadPng);
 rotateBtn.addEventListener("click", rotateSelectedComponent);
 duplicateBtn.addEventListener("click", duplicateSelectedComponent);
 
@@ -2098,6 +2971,23 @@ downloadCalculationBtn.addEventListener("click", () => {
   setStatus("解题步骤文本已开始下载。", "success");
 });
 
+copyReportBtn.addEventListener("click", async () => {
+  await navigator.clipboard.writeText(getProjectReportText());
+  setStatus("中文电路报告已复制到剪贴板。", "success");
+});
+
+downloadReportBtn.addEventListener("click", () => {
+  const blob = new Blob([getProjectReportText()], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = "circuit-report-v10.txt";
+  link.click();
+  URL.revokeObjectURL(url);
+  setStatus("中文电路报告已开始下载。", "success");
+});
+
 function normalizeImportedComponents(data) {
   if (!Array.isArray(data)) {
     throw new Error("components 必须是数组。");
@@ -2181,6 +3071,7 @@ importJsonBtn.addEventListener("click", () => {
     connections = nextConnections;
     clearSelection();
     pendingTerminal = null;
+    resetProbeState();
     rebuildCounters();
     setStatus("JSON 导入成功，画布已恢复。", "success");
     render();
